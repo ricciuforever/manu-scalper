@@ -68,9 +68,19 @@ def history_sync_loop(db, exchange):
             # 1. Sync Fills (for Trade History Table)
             symbols = db.get_setting('SYMBOLS', [])
 
-            # Get last sync timestamp or default to 24h ago
+            # Get last sync timestamp
             last_sync_state = db.get_state('history_sync')
-            start_ts = last_sync_state.get('last_ts', time.time() - 86400)
+
+            # Check if DB is empty to force deep sync
+            existing_fills = db.get_history_fills(limit=1, days=365)
+            is_empty = len(existing_fills) == 0
+
+            if is_empty:
+                print("📜 Empty History Detected: Fetching last 30 days...")
+                start_ts = time.time() - (30 * 86400)
+            else:
+                # Default to last sync time or 24h ago if missing state
+                start_ts = last_sync_state.get('last_ts', time.time() - 86400)
 
             # To be safe against clock skew or missed fills, we go back slightly more,
             # but 'trade_id' uniqueness prevents duplicates.
