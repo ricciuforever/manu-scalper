@@ -201,13 +201,13 @@ def api_history():
                 benchmark_curve.append({'timestamp': ts, 'value': pct_change})
 
     return jsonify({
-        'trades': trades[::-1], # Reverse for table (newest first)
+        'trades': formatted_fills, # Already filtered/formatted
         'equity_curve': equity_curve,
         'benchmark_curve': benchmark_curve,
         'stats': {
             'total_pnl': cumulative_pnl,
             'win_rate': win_rate,
-            'total_trades': len(trades),
+            'total_trades': total_closed,
             'benchmark_return': benchmark_curve[-1]['value'] if benchmark_curve else 0
         }
     })
