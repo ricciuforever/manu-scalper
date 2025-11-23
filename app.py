@@ -30,15 +30,9 @@ def get_exchange():
 
 @app.route('/')
 def index():
-    return "<h1>Manu Scalper System Online</h1>"
-
-@app.route('/admin')
-@basic_auth.required
-def admin_dashboard():
     return render_template('dashboard.html')
 
 @app.route('/history')
-@basic_auth.required
 def history():
     return render_template('history.html')
 
@@ -87,7 +81,6 @@ def settings():
     return render_template('settings.html', settings=current_settings)
 
 @app.route('/api/stats')
-@basic_auth.required
 def api_stats():
     # Recupera dati per la dashboard in tempo reale
     open_positions = db.get_state('open_positions') or []
@@ -121,7 +114,6 @@ def api_stats():
     })
 
 @app.route('/api/history')
-@basic_auth.required
 def api_history():
     days = int(request.args.get('days', 30))
     limit_ts = 0
@@ -204,7 +196,6 @@ def api_history():
     })
 
 @app.route('/api/logs')
-@basic_auth.required
 def api_logs():
     logs = db.get_recent_logs(50)
     formatted_logs = []
