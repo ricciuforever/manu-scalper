@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header bg-transparent border-bottom border-secondary">
+                    <h4 class="mb-0"><i class="fas fa-sliders-h me-2"></i> Configurazione Bot</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+
+                        <!-- Asset Management -->
+                        <h5 class="text-info mb-3">Asset & Mercato</h5>
+                        <div class="mb-3">
+                            <label class="form-label">Simboli (Lista JSON)</label>
+                            <textarea name="symbols" class="form-control bg-dark text-light border-secondary" rows="3" required>{{ settings.SYMBOLS }}</textarea>
+                            <div class="form-text text-muted">Es. ["BTC-USDT", "ETH-USDT", "SOL-USDT"]</div>
+                        </div>
+
+                        <!-- Risk Management -->
+                        <h5 class="text-info mb-3 mt-4">Gestione Rischio (Keep Logic)</h5>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Leva (x)</label>
+                                <input type="number" name="LEVERAGE" class="form-control bg-dark text-light border-secondary" value="{{ settings.LEVERAGE }}" min="1" max="100">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Dimensione Ordine ($)</label>
+                                <input type="number" name="BASE_ORDER_SIZE" class="form-control bg-dark text-light border-secondary" value="{{ settings.BASE_ORDER_SIZE }}" step="1">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Max Posizioni</label>
+                                <input type="number" name="MAX_POSITIONS" class="form-control bg-dark text-light border-secondary" value="{{ settings.MAX_POSITIONS }}" min="1">
+                            </div>
+                        </div>
+
+                        <!-- Timing & AI -->
+                        <h5 class="text-info mb-3 mt-4">Timing & Intelligenza</h5>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Intervallo Strategia (sec)</label>
+                                <input type="number" name="STRATEGIST_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.STRATEGIST_INTERVAL }}" min="5">
+                                <div class="form-text text-muted">Consigliato: 60-120s per Swing Trading</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Intervallo Esecuzione (sec)</label>
+                                <input type="number" name="EXECUTION_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.EXECUTION_INTERVAL }}" min="1">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">Modello AI</label>
+                                <input type="text" name="AI_MODEL" class="form-control bg-dark text-light border-secondary" value="{{ settings.AI_MODEL }}">
+                            </div>
+                        </div>
+
+                        <hr class="border-secondary my-4">
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save me-2"></i> Salva Impostazioni
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

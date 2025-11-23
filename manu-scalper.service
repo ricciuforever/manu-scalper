@@ -1,0 +1,22 @@
+[Unit]
+Description=Manu Scalper Bot Service
+After=network.target
+
+[Service]
+# User running the bot
+User=capitaltrading.it_fddcguc8kmf
+# Group running the bot
+Group=psacln
+# Directory where the bot code resides
+WorkingDirectory=/var/www/vhosts/capitaltrading.it/manu.capitaltrading.it
+# Command to run the bot
+ExecStart=/var/www/vhosts/capitaltrading.it/manu.capitaltrading.it/venv/bin/python /var/www/vhosts/capitaltrading.it/manu.capitaltrading.it/manu.py
+# Environment variables
+# Environment=APP_DEBUG=false
+
+# Restart automatically if it crashes
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
