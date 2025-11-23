@@ -86,16 +86,24 @@ def api_stats():
     # Calcolo PnL Unrealized Totale
     total_unrealized = sum([p.get('unrealisedPnl', 0) for p in open_positions])
 
-    # Recupera Trades Recenti per PnL Realizzato
+    # Recupera Trades Recenti
     conn = db.get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM trades ORDER BY timestamp DESC LIMIT 50")
     cols = [description[0] for description in cursor.description]
     trades = [dict(zip(cols, row)) for row in cursor.fetchall()]
-    conn.close()
 
-    # Calcola PnL Realizzato Totale (approssimativo dallo storico)
-    realized_pnl = sum([t['pnl'] for t in trades if t['pnl'] is not None])
+    # Calcola PnL Realizzato Totale (Sessione odierna UTC)
+    # Start of day UTC timestamp
+    now = datetime.utcnow()
+    start_of_day = datetime(now.year, now.month, now.day)
+    start_ts = start_of_day.timestamp()
+
+    cursor.execute("SELECT SUM(pnl) FROM trades WHERE timestamp >= ?", (start_ts,))
+    row = cursor.fetchone()
+    realized_pnl = row[0] if row and row[0] is not None else 0.0
+
+    conn.close()
 
     # Bot Status
     bot_state = db.get_state('main_loop')

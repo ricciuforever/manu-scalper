@@ -144,8 +144,21 @@ class KuCoinConnector:
             self.logger.error(f"⚠️ Stats 24h Error {symbol}: {e}")
             return {'price_change_percent': 0.0}
 
+    def _ensure_symbol_map(self):
+        """Ensures symbol multipliers are cached."""
+        if not hasattr(self, 'symbol_map'):
+            self.symbol_map = {}
+            try:
+                resp = self.market_api.get_all_symbols()
+                if resp.data:
+                    for s in resp.data:
+                        self.symbol_map[s.symbol] = float(s.multiplier)
+            except Exception as e:
+                self.logger.error(f"⚠️ Error caching symbols: {e}")
+
     def get_all_open_positions(self):
         try:
+            self._ensure_symbol_map()
             req = GetPositionListReqBuilder().set_currency('USDT').build()
             resp = self.positions_api.get_position_list(req)
             results = []
@@ -156,11 +169,14 @@ class KuCoinConnector:
                         entry_price = float(p.avg_entry_price or 0)
                         leverage = float(p.real_leverage or 0)
                         pnl = float(p.unrealised_pnl or 0)
+                        sdk_symbol = p.symbol
+                        multiplier = self.symbol_map.get(sdk_symbol, 1.0)
 
                         # Calculate ROE %
                         roe_pcnt = 0
                         if entry_price > 0 and leverage > 0:
-                            margin = (entry_price * abs(qty)) / leverage
+                            # Margin = (Entry Price * Lots * Multiplier) / Leverage
+                            margin = (entry_price * abs(qty) * multiplier) / leverage
                             if margin > 0:
                                 roe_pcnt = pnl / margin
 
@@ -168,8 +184,8 @@ class KuCoinConnector:
                             'symbol': self._to_ccxt_symbol(p.symbol),
                             'pnl': pnl,
                             'unrealisedPnl': pnl,
-                            'unrealisedPnlPcnt': roe_pcnt, # Added calculation
-                            'markPrice': float(getattr(p, 'mark_price', 0) or 0), # Added markPrice
+                            'unrealisedPnlPcnt': roe_pcnt,
+                            'markPrice': float(getattr(p, 'mark_price', 0) or 0),
                             'side': 'long' if qty > 0 else 'short',
                             'quantity': abs(qty),
                             'entryPrice': entry_price,
@@ -313,20 +329,8 @@ class KuCoinConnector:
                 return None
 
             # 2. Recupera info sul contratto (Multiplier) per calcolare i lotti
-            # Cache dei moltiplicatori per non chiamare l'API ogni volta
-            if not hasattr(self, 'symbol_map'):
-                self.symbol_map = {}
-                try:
-                    # Scarica info su tutti i simboli Futures
-                    resp = self.market_api.get_all_symbols()
-                    if resp.data:
-                        for s in resp.data:
-                            # Salva il moltiplicatore (es. BTC: 0.001, PEPE: 10000, ecc.)
-                            self.symbol_map[s.symbol] = float(s.multiplier)
-                except Exception as e:
-                    self.logger.error(f"⚠️ Error caching symbols: {e}")
-
-            multiplier = self.symbol_map.get(sdk_symbol, 1.0) # Fallback a 1.0 se fallisce (rischioso ma meglio di nulla)
+            self._ensure_symbol_map()
+            multiplier = self.symbol_map.get(sdk_symbol, 1.0)
 
             # 3. Calcolo Size (Numero di Lotti)
             # Formula: (Margine * Leva) / (Prezzo * Multiplier)
