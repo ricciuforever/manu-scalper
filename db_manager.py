@@ -75,6 +75,36 @@ class DatabaseManager:
             )
         ''')
 
+        # History Fills Table (Executions)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS history_fills (
+                trade_id TEXT PRIMARY KEY,
+                symbol TEXT,
+                side TEXT,
+                price REAL,
+                size REAL,
+                value REAL,
+                fee REAL,
+                fee_currency TEXT,
+                timestamp REAL,
+                order_id TEXT,
+                trade_type TEXT
+            )
+        ''')
+
+        # History Ledger Table (PnL)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS history_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp REAL,
+                amount REAL,
+                type TEXT,
+                currency TEXT,
+                remark TEXT,
+                UNIQUE(timestamp, amount, type, remark)
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -157,6 +187,55 @@ class DatabaseManager:
         ''', (component, time.time(), json_data))
         conn.commit()
         conn.close()
+
+    def save_fill(self, fill):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR IGNORE INTO history_fills
+            (trade_id, symbol, side, price, size, value, fee, fee_currency, timestamp, order_id, trade_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            fill['tradeId'], fill['symbol'], fill['side'], fill['price'], fill['size'],
+            fill['value'], fill['fee'], fill['feeCurrency'], fill['timestamp'],
+            fill['orderId'], fill['tradeType']
+        ))
+        conn.commit()
+        conn.close()
+
+    def save_ledger_item(self, item):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # Ledger doesn't have a unique ID in the simple dict, using UNIQUE constraint on fields
+        cursor.execute('''
+            INSERT OR IGNORE INTO history_ledger
+            (timestamp, amount, type, currency, remark)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            item['timestamp'], item['amount'], item['type'], item['currency'], item['remark']
+        ))
+        conn.commit()
+        conn.close()
+
+    def get_history_fills(self, limit=100, days=30):
+        ts_limit = time.time() - (days * 86400)
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM history_fills WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?", (ts_limit, limit))
+        cols = [description[0] for description in cursor.description]
+        rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+
+    def get_history_ledger(self, days=30):
+        ts_limit = time.time() - (days * 86400)
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM history_ledger WHERE timestamp >= ? ORDER BY timestamp ASC", (ts_limit,))
+        cols = [description[0] for description in cursor.description]
+        rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+        conn.close()
+        return rows
 
     def get_recent_logs(self, limit=50):
         conn = self.get_connection()

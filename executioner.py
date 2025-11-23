@@ -65,18 +65,19 @@ class Executioner:
         for pos in positions:
             symbol = pos['symbol']
 
-            # --- A. FIXED STOP LOSS (-1%) ---
+            # --- A. FIXED STOP LOSS (-1%) & SAFETY TP (+2%) ---
             # Only check every few seconds to save API calls
             if time.time() - LAST_SL_CHECK.get(symbol, 0) > SL_CHECK_INTERVAL:
-                self._ensure_fixed_stop_loss(pos)
+                self._ensure_protection_orders(pos)
                 LAST_SL_CHECK[symbol] = time.time()
 
             # --- B. DYNAMIC TRAILING TAKE PROFIT ---
             self._manage_dynamic_exit(pos)
 
-    def _ensure_fixed_stop_loss(self, pos):
+    def _ensure_protection_orders(self, pos):
         """
-        Checks if a Stop Loss order exists. If not, places one at Entry - 1%.
+        Checks if SL and Safety TP orders exist.
+        Places Fixed SL (-1%) and Safety TP (+2%) if missing.
         """
         symbol = pos['symbol']
         entry_price = float(pos['entryPrice'])
@@ -86,21 +87,72 @@ class Executioner:
         # 1. Check existing orders
         open_orders = self.exchange.get_open_orders(symbol)
         has_sl = False
+        has_tp = False
 
         for o in open_orders:
-            # Check if it's a stop order in the right direction
-            if side == 'long' and o['side'] == 'sell' and o.get('stopPrice'):
-                has_sl = True
-                break
-            elif side == 'short' and o['side'] == 'buy' and o.get('stopPrice'):
-                has_sl = True
-                break
+            # Check SL (Stop Market)
+            if o.get('stopPrice'):
+                if side == 'long' and o['side'] == 'sell': has_sl = True
+                elif side == 'short' and o['side'] == 'buy': has_sl = True
 
-        if has_sl:
-            return
+            # Check TP (Limit Order) - assuming it's a Limit Order far away
+            # Or usually TP is also a Stop Market (Take Profit Market) or Limit.
+            # Here we just look for a Limit order in closing direction.
+            if not o.get('stopPrice') and o.get('price'): # Limit Order
+                 if side == 'long' and o['side'] == 'sell': has_tp = True
+                 elif side == 'short' and o['side'] == 'buy': has_tp = True
 
-        # 2. Calculate Fixed SL Price (-1%)
+        # 2. Place SL if missing (-1%)
         sl_percent = 0.01
+        if not has_sl:
+            if side == 'long':
+                stop_price = entry_price * (1 - sl_percent)
+                close_side = 'sell'
+                stop_dir = 'down'
+            else:
+                stop_price = entry_price * (1 + sl_percent)
+                close_side = 'buy'
+                stop_dir = 'up'
+
+            print(f"🛡️ Placing FIXED SL for {symbol} @ {stop_price:.2f}")
+            self.exchange.place_stop_market_order(symbol, close_side, quantity, stop_price, stop_dir, pos.get('marginMode'))
+
+        # 3. Place Safety TP if missing (+2%)
+        # This acts as a 'hard' TP in case dynamic logic fails or huge spike occurs.
+        tp_percent = 0.02
+        if not has_tp:
+             if side == 'long':
+                tp_price = entry_price * (1 + tp_percent)
+                close_side = 'sell'
+             else:
+                tp_price = entry_price * (1 - tp_percent)
+                close_side = 'buy'
+
+             # Use Limit Order for TP
+             print(f"🎯 Placing SAFETY TP for {symbol} @ {tp_price:.2f}")
+             # We use a standard Limit Order, Reduce Only
+             # We need to add 'place_limit_order' to connector or use 'execute_trade' with limit?
+             # 'execute_trade' is Market.
+             # 'place_market_order' is Market.
+             # We need a new method 'place_limit_order'.
+             # Or we can just use place_stop_market_order with 'up'/'down' as Take Profit Market?
+             # Let's use Take Profit Market for simplicity as it guarantees execution.
+
+             # TP Market:
+             # Long: Stop Price > Entry, direction 'up'
+             # Short: Stop Price < Entry, direction 'down'
+
+             tp_dir = 'up' if side == 'long' else 'down'
+             # self.exchange.place_stop_market_order(symbol, close_side, quantity, tp_price, tp_dir, pos.get('marginMode'))
+             # But wait, place_stop_market_order uses 'stop' param.
+             # In KuCoin V2, 'stop'='up' triggers when price >= stopPrice.
+             # So for Long TP: Price rises to TP. 'up'. Correct.
+             # For Short TP: Price falls to TP. 'down'. Correct.
+
+             # However, usually SL is 'down' for Long (price drops).
+             # TP is 'up' for Long (price rises).
+
+             self.exchange.place_stop_market_order(symbol, close_side, quantity, tp_price, tp_dir, pos.get('marginMode'))
         if side == 'long':
             stop_price = entry_price * (1 - sl_percent)
             close_side = 'sell'

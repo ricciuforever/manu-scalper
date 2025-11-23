@@ -45,6 +45,10 @@ def bot_loop(db, exchange):
     t_strat.start()
     t_exec.start()
 
+    # History Sync Thread
+    t_sync = threading.Thread(target=history_sync_loop, args=(db, exchange), daemon=True, name="HistorySync")
+    t_sync.start()
+
     try:
         while True:
             # Main Loop Heartbeat
@@ -52,6 +56,54 @@ def bot_loop(db, exchange):
             time.sleep(60)
     except KeyboardInterrupt:
         print("\n🛑 SHUTDOWN...")
+
+def history_sync_loop(db, exchange):
+    """
+    Background loop to sync Trade History and PnL Ledger from KuCoin.
+    Runs every 60 seconds.
+    """
+    print("📜 HISTORY SYNCHRONIZER STARTED.")
+    while True:
+        try:
+            # 1. Sync Fills (for Trade History Table)
+            symbols = db.get_setting('SYMBOLS', [])
+
+            # Get last sync timestamp or default to 24h ago
+            last_sync_state = db.get_state('history_sync')
+            start_ts = last_sync_state.get('last_ts', time.time() - 86400)
+
+            # To be safe against clock skew or missed fills, we go back slightly more,
+            # but 'trade_id' uniqueness prevents duplicates.
+            # However, if we query too much, we hit rate limits.
+            # KuCoin Trade History is limited.
+
+            # If start_ts is too old, cap it? API might limit to 7 days or so.
+            # But let's just stick to 'start_ts'.
+
+            # We update 'new_last_ts' to now after successful sync
+            new_last_ts = time.time()
+
+            for symbol in symbols:
+                fills = exchange.get_trade_history(symbol, start_at=start_ts)
+                for fill in fills:
+                    db.save_fill(fill)
+                time.sleep(0.5) # Rate limit protection
+
+            # 2. Sync Ledger (for PnL Stats)
+            ledger_items = exchange.get_ledger_history(start_at=start_ts)
+            for item in ledger_items:
+                db.save_ledger_item(item)
+
+            # Update state
+            db.update_state('history_sync', {'last_ts': new_last_ts})
+
+            # Log success (sparingly)
+            # print(f"📜 History Synced. {len(ledger_items)} ledger items found.")
+
+        except Exception as e:
+            print(f"⚠️ HISTORY SYNC ERROR: {e}")
+
+        time.sleep(60)
 
 def main():
     print("\n--- MANU: HIGH-FREQUENCY SCALPER ACTIVATED ---")
