@@ -358,3 +358,26 @@ class KuCoinConnector:
         except Exception as e:
             self.logger.error(f"❌ EXEC FAIL {symbol}: {e}")
             return None
+
+    def place_market_order(self, symbol, side, size, reduce_only=True):
+        """
+        Piazza un ordine a mercato diretto (utile per chiusure).
+        size: numero di lotti/contratti.
+        """
+        sdk_symbol = self._to_sdk_symbol(symbol)
+        try:
+            req = AddOrderReqBuilder()\
+                .set_client_oid(str(uuid.uuid4()))\
+                .set_symbol(sdk_symbol)\
+                .set_side(side)\
+                .set_type('market')\
+                .set_size(int(size))\
+                .set_reduce_only(reduce_only)\
+                .build()
+
+            resp = self.order_api.add_order(req)
+            self.logger.info(f"✅ MARKET ORDER {side} {symbol} | Size: {size} | Id: {resp.order_id}")
+            return {'id': resp.order_id}
+        except Exception as e:
+            self.logger.error(f"❌ MARKET ORDER FAIL {symbol}: {e}")
+            return None

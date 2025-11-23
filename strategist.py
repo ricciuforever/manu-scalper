@@ -52,78 +52,80 @@ class Strategist:
                 self.db.log("Strategist", f"Scalp Error {symbol}: {e}", "ERROR")
 
     def _process_asset_for_scalping(self, symbol):
-        # --- 1. DATA FETCHING (Low Timeframes) ---
-        # 1m per entry trigger, 5m per trend filter
-        klines_1m = self.exchange.get_historical_data(symbol, '1m', limit=50)
-        klines_5m = self.exchange.get_historical_data(symbol, '5m', limit=200)
+        # --- 1. DATA FETCHING ---
+        # 15m for MACRO TREND, 1m for TRIGGER
+        klines_1m = self.exchange.get_historical_data(symbol, '1m', limit=200)
+        klines_15m = self.exchange.get_historical_data(symbol, '15m', limit=200)
 
-        if klines_1m.empty or klines_5m.empty:
+        if klines_1m.empty or klines_15m.empty:
             return
 
-        # --- 2. TREND FILTER (5m) ---
-        # Usa EMA 200 su 5m per determinare il trend principale
-        ema200_5m = ta.calculate_ema(klines_5m, 200)
+        # --- 2. MACRO TREND (15m) ---
+        # Trend Filter: Price > EMA 99 (15m)
+        ema99_15m = ta.calculate_ema(klines_15m, 99)
+        current_price_15m = klines_15m['close'].iloc[-1]
+
+        macro_trend = "NEUTRAL"
+        if current_price_15m > ema99_15m:
+            macro_trend = "BULLISH"
+        elif current_price_15m < ema99_15m:
+            macro_trend = "BEARISH"
+
+        # --- 3. TRIGGER INDICATORS (1m) ---
+        ema7 = ta.calculate_ema(klines_1m, 7)
+        ema25 = ta.calculate_ema(klines_1m, 25)
+        ema99 = ta.calculate_ema(klines_1m, 99)
+
+        stoch = ta.calculate_stoch_rsi(klines_1m) # k, d
         current_price = klines_1m['close'].iloc[-1]
 
-        trend = "NEUTRAL"
-        if current_price > ema200_5m:
-            trend = "BULLISH"
-        elif current_price < ema200_5m:
-            trend = "BEARISH"
-
-        # --- 3. INDICATORS (1m) ---
-        rsi = ta.calculate_rsi(klines_1m, 14)
-        stoch = ta.calculate_stoch_rsi(klines_1m)
-        bollinger = ta.calculate_bollinger_bands(klines_1m)
-        atr = ta.calculate_atr(klines_1m, 14)
-
-        # --- 4. SCALPING LOGIC ---
+        # --- 4. SCALPING LOGIC (Trend-Scalper) ---
         bias = "NEUTRAL"
         reason = ""
-        leverage = 10 # Scalping di solito usa leva più alta, ma configurabile
+        leverage = 10
 
         # LOGICA LONG:
-        # 1. Trend Bullish (Prezzo > EMA200 5m)
-        # 2. Pullback: RSI < 40 OR Stoch K < 20 (Oversold condition in trend)
-        # 3. Price vicino a Lower BB (opzionale, ma aumenta winrate)
-        if trend == "BULLISH":
-            if (rsi < 45 and stoch['k'] < 20 and stoch['k'] > stoch['d']): # Incrocio StochRSI in oversold
-                bias = "LONG"
-                reason = f"Trend Bullish + StochRSI Cross Up ({stoch['k']:.2f}) + RSI {rsi:.2f}"
-            elif (bollinger['percent_b'] < 0.1 and rsi < 35): # Bollinger Bounce
-                bias = "LONG"
-                reason = f"Trend Bullish + BB Low Bounce + RSI {rsi:.2f}"
+        # 1. Macro Trend Bullish (15m Price > EMA 99)
+        # 2. Perfect Storm (1m):
+        #    - EMA Fan: EMA 7 > EMA 25 > EMA 99 (Ventaglio Aperto Up)
+        #    - Pullback: StochRSI < 20 (Oversold)
+        #    - Trigger: K cross D Up (K > D)
+        if macro_trend == "BULLISH":
+            # EMA Fan Check
+            if ema7 > ema25 and ema25 > ema99:
+                # Stoch Check
+                if stoch['k'] < 20 and stoch['k'] > stoch['d']:
+                    bias = "LONG"
+                    reason = f"Macro Bull + EMA Fan Up + Stoch Cross Up ({stoch['k']:.1f})"
 
         # LOGICA SHORT:
-        # 1. Trend Bearish (Prezzo < EMA200 5m)
-        # 2. Pullback: RSI > 60 OR Stoch K > 80 (Overbought condition in trend)
-        if trend == "BEARISH":
-            if (rsi > 55 and stoch['k'] > 80 and stoch['k'] < stoch['d']): # Incrocio StochRSI in overbought
-                bias = "SHORT"
-                reason = f"Trend Bearish + StochRSI Cross Down ({stoch['k']:.2f}) + RSI {rsi:.2f}"
-            elif (bollinger['percent_b'] > 0.9 and rsi > 65): # Bollinger Bounce
-                bias = "SHORT"
-                reason = f"Trend Bearish + BB High Bounce + RSI {rsi:.2f}"
+        # 1. Macro Trend Bearish (15m Price < EMA 99)
+        # 2. Perfect Storm (1m):
+        #    - EMA Fan: EMA 7 < EMA 25 < EMA 99 (Ventaglio Aperto Down)
+        #    - Pullback: StochRSI > 80 (Overbought)
+        #    - Trigger: K cross D Down (K < D)
+        if macro_trend == "BEARISH":
+            # EMA Fan Check
+            if ema7 < ema25 and ema25 < ema99:
+                # Stoch Check
+                if stoch['k'] > 80 and stoch['k'] < stoch['d']:
+                    bias = "SHORT"
+                    reason = f"Macro Bear + EMA Fan Down + Stoch Cross Down ({stoch['k']:.1f})"
 
-        # --- 5. VOLATILITY CHECK ---
-        # Se ATR troppo basso, le fees mangiano i profitti.
-        # Es. ATR deve essere almeno 0.05% del prezzo (molto basso, ma serve movimento)
-        if atr < (current_price * 0.0005):
-            bias = "NEUTRAL" # Mercato troppo piatto
-
-        # Update Shared State
+        # --- 5. METRICS UPDATE ---
         if symbol not in self.shared_state: self.shared_state[symbol] = {}
 
-        # Salva stato solo se cambia o se c'è segnale, per debug web
         self.shared_state[symbol] = {
             'bias': bias,
-            'risk': 'HIGH', # Scalping è high risk
+            'risk': 'HIGH',
             'leverage': leverage,
             'metrics': {
-                'rsi': rsi,
+                'macro_trend': macro_trend,
+                'ema7': ema7,
+                'ema25': ema25,
+                'ema99': ema99,
                 'stoch_k': stoch['k'],
-                'trend': trend,
-                'atr': atr
+                'stoch_d': stoch['d']
             }
         }
 
