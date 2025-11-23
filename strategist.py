@@ -1,8 +1,5 @@
 import time
-import json
-import google.generativeai as genai
 import technical_analysis as ta
-from config import GEMINI_API_KEY
 import pandas as pd
 
 class Strategist:
@@ -10,146 +7,128 @@ class Strategist:
         self.exchange = exchange
         self.shared_state = shared_state
         self.db = db_manager
-        genai.configure(api_key=GEMINI_API_KEY)
-
-        # Load initial model
-        model_name = self.db.get_setting('AI_MODEL', 'gemini-2.0-flash-lite')
-        self.model = genai.GenerativeModel(model_name)
+        # Removed AI Initialization
 
     def run(self):
-        print("🧠 STRATEGIST: Online. Modalità SWING TRADING.")
+        print("⚡ STRATEGIST: Online. Modalità HIGH-FREQUENCY SCALPING.")
         while True:
-            interval = self.db.get_setting('STRATEGIST_INTERVAL', 60)
+            # Scalping richiede intervalli molto brevi (es. 10s)
+            interval = self.db.get_setting('STRATEGIST_INTERVAL', 10)
             try:
                 self._run_analysis_cycle()
             except Exception as e:
-                print(f"🧠 CRITICAL STRATEGIST ERROR: {e}")
+                print(f"⚡ CRITICAL STRATEGIST ERROR: {e}")
                 self.db.log("Strategist", f"CRITICAL ERROR: {e}", "ERROR")
 
-            print(f"💤 Strategist sleeping for {interval}s...")
             time.sleep(interval)
 
     def _run_analysis_cycle(self):
         symbols = self.db.get_setting('SYMBOLS', [])
         if not symbols:
-             print("⚠️ Nessun simbolo configurato.")
              return
 
         # Update DB state
         self.db.update_state('strategist', {'status': 'scanning', 'symbols_count': len(symbols)})
 
         open_positions = self.exchange.get_all_open_positions()
-        max_positions = self.db.get_setting('MAX_POSITIONS', 3)
+        max_positions = self.db.get_setting('MAX_POSITIONS', 5)
 
-        # Swing Trading: Non forzare entrate se siamo già esposti
         if len(open_positions) >= max_positions:
-            print(f"💤 STRATEGIST PAUSED: Max Positions Raggiunto ({len(open_positions)}/{max_positions}). Gestione attiva.")
             self.db.update_state('strategist', {'status': 'paused', 'reason': 'max_positions_reached'})
             return
 
-        print(f"🌍 STRATEGIST: Analisi di {len(symbols)} asset per opportunità Swing...")
+        # print(f"⚡ STRATEGIST: Analisi Scalp...") # Ridotto log spam
 
         for symbol in symbols:
-            # Salta se abbiamo già una posizione su questo simbolo
+            # Salta se abbiamo già una posizione
             if any(p['symbol'] == symbol for p in open_positions):
                 continue
 
             try:
-                self._process_asset_for_swing(symbol)
-                time.sleep(2) # Rispetto rate limit AI e Exchange
+                self._process_asset_for_scalping(symbol)
+                time.sleep(0.5) # Minimo delay per evitare rate limit
             except Exception as e:
-                print(f"🧠 ERROR {symbol}: {e}")
-                self.db.log("Strategist", f"AI Error {symbol}: {e}", "ERROR")
+                print(f"⚡ ERROR {symbol}: {e}")
+                self.db.log("Strategist", f"Scalp Error {symbol}: {e}", "ERROR")
 
-    def _process_asset_for_swing(self, symbol):
+    def _process_asset_for_scalping(self, symbol):
+        # --- 1. DATA FETCHING (Low Timeframes) ---
+        # 1m per entry trigger, 5m per trend filter
+        klines_1m = self.exchange.get_historical_data(symbol, '1m', limit=50)
+        klines_5m = self.exchange.get_historical_data(symbol, '5m', limit=200)
 
-        # 1. Dati Multi-Timeframe
-        # 1h per segnale entry, 4h per trend di fondo
-        klines_1h = self.exchange.get_historical_data(symbol, '1h', limit=50)
-        klines_4h = self.exchange.get_historical_data(symbol, '4h', limit=20)
-
-        if klines_1h.empty or klines_4h.empty:
+        if klines_1m.empty or klines_5m.empty:
             return
 
-        # 2. Indicatori Tecnici (1h)
-        current_price = klines_1h['close'].iloc[-1]
-        rsi = ta.calculate_rsi(klines_1h, 14)
-        macd = ta.calculate_macd(klines_1h)
-        bollinger = ta.calculate_bollinger_bands(klines_1h)
-        trend_4h = ta.analyze_trend_structure(klines_4h)
+        # --- 2. TREND FILTER (5m) ---
+        # Usa EMA 200 su 5m per determinare il trend principale
+        ema200_5m = ta.calculate_ema(klines_5m, 200)
+        current_price = klines_1m['close'].iloc[-1]
 
-        # Formattiamo la Price Action (ultime 5 candele 1h)
-        price_history = []
-        for i in range(max(0, len(klines_1h) - 5), len(klines_1h)):
-            row = klines_1h.iloc[i]
-            ts = pd.to_datetime(row['timestamp'], unit='ms').strftime('%H:%M')
-            price_history.append(f"{ts}: O={row['open']}, H={row['high']}, L={row['low']}, C={row['close']}")
-        price_history_str = "\n".join(price_history)
+        trend = "NEUTRAL"
+        if current_price > ema200_5m:
+            trend = "BULLISH"
+        elif current_price < ema200_5m:
+            trend = "BEARISH"
 
-        # 3. Prompt AI - Swing Oriented
-        prompt = f"""
-        Sei un Trader Professionista specializzato in Swing Trading Intraday.
-        Analizza i dati seguenti per {symbol} e decidi se aprire una posizione.
-        Sii PAZIENTE. Cerca conferme, non rumore.
+        # --- 3. INDICATORS (1m) ---
+        rsi = ta.calculate_rsi(klines_1m, 14)
+        stoch = ta.calculate_stoch_rsi(klines_1m)
+        bollinger = ta.calculate_bollinger_bands(klines_1m)
+        atr = ta.calculate_atr(klines_1m, 14)
 
-        DATI DI MERCATO:
-        - Prezzo Attuale: {current_price}
-        - Trend di Fondo (4H): {trend_4h} (Se Ranging, sii cauto. Se Trend, segui la direzione).
+        # --- 4. SCALPING LOGIC ---
+        bias = "NEUTRAL"
+        reason = ""
+        leverage = 10 # Scalping di solito usa leva più alta, ma configurabile
 
-        INDICATORI TECNICI (1H):
-        - RSI (14): {rsi:.2f} (Overbought > 70, Oversold < 30, ma in trend forte può restare estremo).
-        - MACD: Line={macd['macd']:.4f}, Signal={macd['signal']:.4f}, Hist={macd['hist']:.4f} (Cerca incroci o divergenze).
-        - Bollinger: %B={bollinger['percent_b']:.2f} (Vicino a 0 = Supporto, Vicino a 1 = Resistenza).
+        # LOGICA LONG:
+        # 1. Trend Bullish (Prezzo > EMA200 5m)
+        # 2. Pullback: RSI < 40 OR Stoch K < 20 (Oversold condition in trend)
+        # 3. Price vicino a Lower BB (opzionale, ma aumenta winrate)
+        if trend == "BULLISH":
+            if (rsi < 45 and stoch['k'] < 20 and stoch['k'] > stoch['d']): # Incrocio StochRSI in oversold
+                bias = "LONG"
+                reason = f"Trend Bullish + StochRSI Cross Up ({stoch['k']:.2f}) + RSI {rsi:.2f}"
+            elif (bollinger['percent_b'] < 0.1 and rsi < 35): # Bollinger Bounce
+                bias = "LONG"
+                reason = f"Trend Bullish + BB Low Bounce + RSI {rsi:.2f}"
 
-        PRICE ACTION RECENTE (1H):
-        {price_history_str}
+        # LOGICA SHORT:
+        # 1. Trend Bearish (Prezzo < EMA200 5m)
+        # 2. Pullback: RSI > 60 OR Stoch K > 80 (Overbought condition in trend)
+        if trend == "BEARISH":
+            if (rsi > 55 and stoch['k'] > 80 and stoch['k'] < stoch['d']): # Incrocio StochRSI in overbought
+                bias = "SHORT"
+                reason = f"Trend Bearish + StochRSI Cross Down ({stoch['k']:.2f}) + RSI {rsi:.2f}"
+            elif (bollinger['percent_b'] > 0.9 and rsi > 65): # Bollinger Bounce
+                bias = "SHORT"
+                reason = f"Trend Bearish + BB High Bounce + RSI {rsi:.2f}"
 
-        OBIETTIVO:
-        Catturare un movimento direzionale significativo, non pochi pip.
-        Evita entrate se il mercato è piatto (Ranging senza chiari segnali dai bordi delle Bollinger).
+        # --- 5. VOLATILITY CHECK ---
+        # Se ATR troppo basso, le fees mangiano i profitti.
+        # Es. ATR deve essere almeno 0.05% del prezzo (molto basso, ma serve movimento)
+        if atr < (current_price * 0.0005):
+            bias = "NEUTRAL" # Mercato troppo piatto
 
-        OUTPUT RICHIESTO (JSON):
-        {{"bias": "LONG"|"SHORT"|"NEUTRAL", "risk": "LOW"|"MEDIUM"|"HIGH", "leverage": 5, "reason": "Spiegazione concisa"}}
-        """
+        # Update Shared State
+        if symbol not in self.shared_state: self.shared_state[symbol] = {}
 
-        try:
-            # Reload model setting
-            current_model_name = self.db.get_setting('AI_MODEL', 'gemini-2.0-flash-lite')
-            # Simple logic to update instance if changed, or just init new one
-            if self.model.model_name.split('/')[-1] != current_model_name:
-                 self.model = genai.GenerativeModel(current_model_name)
-
-            response = self.model.generate_content(prompt)
-            text = response.text.replace('```json', '').replace('```', '').strip()
-            decision = json.loads(text)
-
-            bias = decision.get('bias', 'NEUTRAL')
-            risk = decision.get('risk', 'HIGH')
-            leverage = decision.get('leverage', 5) # Default conservative leverage
-            reason = decision.get('reason', 'No reason provided')
-
-            # Filtro aggiuntivo di sicurezza
-            if trend_4h == "UPTREND" and bias == "SHORT":
-                reason += " (WARNING: Counter-trend trade filtered)"
-                bias = "NEUTRAL"
-            if trend_4h == "DOWNTREND" and bias == "LONG":
-                reason += " (WARNING: Counter-trend trade filtered)"
-                bias = "NEUTRAL"
-
-            # Update Shared State
-            if symbol not in self.shared_state: self.shared_state[symbol] = {}
-            self.shared_state[symbol] = {
-                'bias': bias,
-                'risk': risk,
-                'leverage': leverage
+        # Salva stato solo se cambia o se c'è segnale, per debug web
+        self.shared_state[symbol] = {
+            'bias': bias,
+            'risk': 'HIGH', # Scalping è high risk
+            'leverage': leverage,
+            'metrics': {
+                'rsi': rsi,
+                'stoch_k': stoch['k'],
+                'trend': trend,
+                'atr': atr
             }
+        }
 
-            # Log decision
-            self.db.save_signal(symbol, bias, risk, leverage, reason)
-
-            if bias != 'NEUTRAL':
-                print(f"🚀 {symbol} SIGNAL: {bias} ({reason})")
-                self.db.log("Strategist", f"SIGNAL {symbol}: {bias}. {reason}", "INFO")
-
-        except Exception as e:
-            print(f"AI Error: {e}")
+        # Log decision only if signal
+        if bias != 'NEUTRAL':
+            self.db.save_signal(symbol, bias, "HIGH", leverage, reason)
+            print(f"🚀 SCALP SIGNAL {symbol}: {bias} ({reason})")
+            self.db.log("Strategist", f"SCALP {symbol}: {bias}. {reason}", "INFO")

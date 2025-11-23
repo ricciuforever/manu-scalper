@@ -54,7 +54,7 @@ def bot_loop(db, exchange):
         print("\n🛑 SHUTDOWN...")
 
 def main():
-    print("\n--- MANU: SWING TRADER AI ACTIVATED ---")
+    print("\n--- MANU: HIGH-FREQUENCY SCALPER ACTIVATED ---")
 
     # Initialize Database
     db = DatabaseManager()
