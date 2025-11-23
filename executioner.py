@@ -77,8 +77,8 @@ class Executioner:
     def _ensure_protection_orders(self, pos):
         """
         Checks if SL and Safety TP orders exist.
-        Places Fixed SL (-1%) and Safety TP (+2%) if missing.
-        Handles duplicates by cancelling all if count > expected.
+        Ensures strict 1 SL (-1%) and 1 TP (+2%) structure.
+        If missing or duplicate, resets BOTH.
         """
         symbol = pos['symbol']
         entry_price = float(pos['entryPrice'])
@@ -114,51 +114,37 @@ class Executioner:
                     elif price < entry_price:
                         tp_orders.append(o)
 
-        # 2. Handle Duplicates (Cleanup)
-        if len(sl_orders) > 1 or len(tp_orders) > 1:
-            print(f"⚠️ Detected Duplicate Orders for {symbol} (SL: {len(sl_orders)}, TP: {len(tp_orders)}). Cleaning up...")
-            self.exchange.cancel_all_orders(symbol)
-            sl_orders = []
-            tp_orders = []
-            # We will re-place both below
+        # 2. Strict Verification: Must have exactly 1 SL and 1 TP
+        if len(sl_orders) == 1 and len(tp_orders) == 1:
+            return # All good
 
-        # 3. Place SL if missing (-1%)
+        # 3. If structure is invalid (0,0 or 1,0 or 0,1 or duplicates), RESET ALL.
+        print(f"♻️ Order Mismatch for {symbol} (SL: {len(sl_orders)}, TP: {len(tp_orders)}). Resetting protection...")
+        self.exchange.cancel_all_orders(symbol)
+
+        # 4. Place Fixed SL (-1%)
         sl_percent = 0.01
-        if not sl_orders:
-            if side == 'long':
-                stop_price = entry_price * (1 - sl_percent)
-                stop_dir = 'down'
-            else:
-                stop_price = entry_price * (1 + sl_percent)
-                stop_dir = 'up'
-
-            print(f"🛡️ Placing FIXED SL for {symbol} @ {stop_price:.2f}")
-            self.exchange.place_stop_market_order(symbol, close_side, quantity, stop_price, stop_dir, pos.get('marginMode'))
-
-        # 4. Place Safety TP if missing (+2%)
-        tp_percent = 0.02
-        if not tp_orders:
-             if side == 'long':
-                tp_price = entry_price * (1 + tp_percent)
-                stop_dir = 'up'
-             else:
-                tp_price = entry_price * (1 - tp_percent)
-                stop_dir = 'down'
-
-             print(f"🎯 Placing SAFETY TP for {symbol} @ {tp_price:.2f}")
-             self.exchange.place_stop_market_order(symbol, close_side, quantity, tp_price, stop_dir, pos.get('marginMode'))
         if side == 'long':
             stop_price = entry_price * (1 - sl_percent)
-            close_side = 'sell'
             stop_dir = 'down'
         else:
             stop_price = entry_price * (1 + sl_percent)
-            close_side = 'buy'
             stop_dir = 'up'
 
-        # 3. Place Order
         print(f"🛡️ Placing FIXED SL for {symbol} @ {stop_price:.2f}")
         self.exchange.place_stop_market_order(symbol, close_side, quantity, stop_price, stop_dir, pos.get('marginMode'))
+
+        # 5. Place Safety TP (+2%)
+        tp_percent = 0.02
+        if side == 'long':
+            tp_price = entry_price * (1 + tp_percent)
+            stop_dir = 'up'
+        else:
+            tp_price = entry_price * (1 - tp_percent)
+            stop_dir = 'down'
+
+        print(f"🎯 Placing SAFETY TP for {symbol} @ {tp_price:.2f}")
+        self.exchange.place_stop_market_order(symbol, close_side, quantity, tp_price, stop_dir, pos.get('marginMode'))
 
     def _manage_dynamic_exit(self, pos):
         """
@@ -231,6 +217,10 @@ class Executioner:
         # Market Close
         print(f"⚡ CLOSING {symbol} MARKET ({side})")
         res = self.exchange.place_market_order(symbol, side, qty, reduce_only=True)
+
+        # Always cleanup open orders (SL/TP) for this symbol
+        self.exchange.cancel_all_orders(symbol)
+
         if res:
              self.db.log("Executioner", f"CLOSED {side} {symbol}", "INFO")
              # Clean up trailing state immediately
