@@ -32,7 +32,7 @@ Il sistema è unificato. Per avviare sia il Bot di Trading che la Dashboard Web,
 python manu.py
 ```
 
-- **Dashboard:** Apri il browser su `http://localhost:5000`
+- **Dashboard:** Apri il browser su `http://localhost:5002`
 - **Log:** I log del bot saranno visibili sia nel terminale che nella dashboard.
 
 ## ⚙️ Configurazione

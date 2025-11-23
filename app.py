@@ -224,4 +224,4 @@ class CustomRequestHandler(WSGIRequestHandler):
         super().log_request(code, size)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True, request_handler=CustomRequestHandler)
+    app.run(host='0.0.0.0', port=5002, debug=True, request_handler=CustomRequestHandler)
