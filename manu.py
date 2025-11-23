@@ -49,6 +49,34 @@ def bot_loop(db, exchange):
         while True:
             # Main Loop Heartbeat
             db.update_state('main_loop', {'status': 'running', 'timestamp': time.time()})
+
+            # --- HISTORY RECONCILIATION ---
+            try:
+                # Sync recent fills to local DB for accurate history
+                fills = exchange.get_recent_fills(limit=50)
+                if fills:
+                    count = 0
+                    for fill in fills:
+                        # Standardize PnL if not present (KuCoin fills might be 0 for open, value for close)
+                        # We save all fills. Frontend will filter/display.
+                        # Note: KuCoin Fill item doesn't always have 'pnl' populated unless it's a realized trade.
+                        # We store what we get.
+                        db.save_fill(
+                            fill['tradeId'],
+                            fill['orderId'],
+                            fill['timestamp'],
+                            fill['symbol'],
+                            fill['side'],
+                            fill['price'],
+                            fill['size'],
+                            fill['fee'],
+                            fill.get('pnl', 0)
+                        )
+                        count += 1
+                    # print(f"📚 History Synced: {count} fills processed.")
+            except Exception as e:
+                print(f"📚 History Sync Error: {e}")
+
             time.sleep(60)
     except KeyboardInterrupt:
         print("\n🛑 SHUTDOWN...")
