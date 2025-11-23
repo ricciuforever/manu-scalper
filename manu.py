@@ -73,8 +73,8 @@ def main():
 
     # Avvia Flask Web Server (Main Thread)
     # Host 0.0.0.0 rende accessibile dall'esterno (o dal sandbox)
-    print("🚀 Avvio Interfaccia Web su porta 5000...")
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    print("🚀 Avvio Interfaccia Web su porta 5002...")
+    app.run(host='0.0.0.0', port=5002, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
     main()
