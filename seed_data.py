@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import time
+import random
 
 DB_PATH = "manu_bot.db"
 
@@ -8,29 +9,19 @@ def seed_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # 1. Seed State (Open Positions)
-    # Simulate 1 Long, 1 Short
+    print("Seeding database...")
+
+    # 1. Seed State (Open Positions) - Mock
     positions = [
         {
             "symbol": "BTC/USDT:USDT",
             "side": "long",
             "leverage": 10,
-            "entryPrice": 50000,
-            "markPrice": 51000,
-            "quantity": 0.1,
-            "unrealisedPnl": 100,
-            "unrealisedPnlPcnt": 0.02,
-            "marginMode": "ISOLATED"
-        },
-        {
-            "symbol": "ETH/USDT:USDT",
-            "side": "short",
-            "leverage": 10,
-            "entryPrice": 3000,
-            "markPrice": 2900,
-            "quantity": 1,
-            "unrealisedPnl": 100,
-            "unrealisedPnlPcnt": 0.033,
+            "entryPrice": 95000,
+            "markPrice": 95100,
+            "quantity": 0.05,
+            "unrealisedPnl": 50,
+            "unrealisedPnlPcnt": 0.01,
             "marginMode": "ISOLATED"
         }
     ]
@@ -39,29 +30,49 @@ def seed_db():
         ON CONFLICT(component) DO UPDATE SET timestamp=excluded.timestamp, data=excluded.data
     ''', ("open_positions", time.time(), json.dumps(positions)))
 
-    # 2. Seed Trades (History)
-    trades = [
-        (time.time() - 86400*2, "SOL/USDT:USDT", "buy", 100, 10, "FILLED", "ord_1", 50),
-        (time.time() - 86400*1, "XRP/USDT:USDT", "sell", 0.5, 1000, "FILLED", "ord_2", -10),
-        (time.time() - 3600, "BTC/USDT:USDT", "buy", 52000, 0.01, "FILLED", "ord_3", 20)
-    ]
-    for t in trades:
-        cursor.execute('''
-            INSERT INTO trades (timestamp, symbol, side, price, quantity, status, order_id, pnl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', t)
+    # 2. Seed History Ledger (PnL)
+    # Generate a random equity curve over the last 30 days
+    now = time.time()
+    balance = 1000.0
 
-    # 3. Seed Logs
-    logs = [
-        (time.time(), "Strategist", "Scanning market...", "INFO"),
-        (time.time(), "Executioner", "Order Filled", "INFO")
-    ]
-    for l in logs:
-        cursor.execute("INSERT INTO logs (timestamp, module, message, level) VALUES (?, ?, ?, ?)", l)
+    # Clear existing data to avoid duplicates/confusion during dev
+    cursor.execute("DELETE FROM history_ledger")
+    cursor.execute("DELETE FROM history_fills")
+
+    for day in range(30, 0, -1):
+        # 1-3 trades per day
+        num_trades = random.randint(1, 3)
+        for _ in range(num_trades):
+            ts = now - (day * 86400) + random.randint(0, 8000)
+            pnl = random.uniform(-20, 35) # Slightly positive expectancy
+            balance += pnl
+
+            cursor.execute('''
+                INSERT INTO history_ledger
+                (timestamp, amount, type, currency, remark)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (ts, pnl, "RealisedPNL", "USDT", "Trade PnL"))
+
+            # Also add a corresponding Fill (execution)
+            trade_id = f"t_{int(ts)}"
+            symbol = random.choice(["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"])
+            side = random.choice(["buy", "sell"])
+            price = random.uniform(2000, 90000) if "ETH" in symbol or "BTC" in symbol else random.uniform(100, 200)
+            size = random.uniform(0.1, 2.0)
+            value = price * size
+
+            cursor.execute('''
+                INSERT INTO history_fills
+                (trade_id, symbol, side, price, size, value, fee, fee_currency, timestamp, order_id, trade_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                trade_id, symbol, side, price, size, value,
+                value * 0.0006, "USDT", ts * 1000, f"ord_{int(ts)}", "trade"
+            ))
 
     conn.commit()
     conn.close()
-    print("Database seeded.")
+    print(f"Database seeded with ~{30*2} trades and ledger entries.")
 
 if __name__ == "__main__":
     seed_db()

@@ -393,21 +393,29 @@ class KuCoinConnector:
     def get_trade_history(self, symbol, start_at=None, limit=20):
         """
         Recupera lo storico dei fills (esecuzioni) privati.
-        Questo endpoint contiene fees e timestamp ma NON il PnL realizzato.
+        Include paginazione automatica per recuperare tutto.
         """
         sdk_symbol = self._to_sdk_symbol(symbol)
+        results = []
+        page = 1
+        page_size = 50 # Max usually 50 or 100
+
         try:
-            builder = GetTradeHistoryReqBuilder().set_symbol(sdk_symbol)
-            if start_at:
-                builder.set_start_at(int(start_at * 1000)) # ms
+            while True:
+                builder = GetTradeHistoryReqBuilder().set_symbol(sdk_symbol)
+                if start_at:
+                    builder.set_start_at(int(start_at * 1000)) # ms
 
-            req = builder.build()
-            resp = self.order_api.get_trade_history(req)
+                builder.set_page_size(page_size)
+                builder.set_current_page(page)
 
-            results = []
-            if resp.items:
+                req = builder.build()
+                resp = self.order_api.get_trade_history(req)
+
+                if not resp.items:
+                    break
+
                 for t in resp.items:
-                    # Convert to simple dict
                     results.append({
                         'tradeId': t.trade_id,
                         'symbol': self._to_ccxt_symbol(t.symbol),
@@ -417,49 +425,66 @@ class KuCoinConnector:
                         'value': float(t.value),
                         'fee': float(t.fee or 0),
                         'feeCurrency': t.fee_currency,
-                        'timestamp': t.trade_time / 1000, # Convert to sec
+                        'timestamp': t.trade_time / 1000,
                         'orderId': t.order_id,
-                        'tradeType': t.trade_type, # trade, settlement...
+                        'tradeType': t.trade_type,
                         'liquidity': t.liquidity
                     })
+
+                if len(resp.items) < page_size:
+                    break
+
+                page += 1
+                time.sleep(0.1) # Prevent Rate Limit
+
             return results
         except Exception as e:
             self.logger.error(f"⚠️ Trade History Error {symbol}: {e}")
-            return []
+            return results
 
     def get_ledger_history(self, start_at=None):
         """
         Recupera il registro transazioni (Ledger) per trovare il PnL Realizzato.
-        Il Ledger è globale, non per simbolo.
+        Include paginazione (offset).
         """
+        results = []
+        offset = 0
+        limit = 50 # Max count usually 100?
+
         try:
-            # We want 'RealisedPNL' events.
-            builder = GetFuturesLedgerReqBuilder().set_type('RealisedPNL')
-            if start_at:
-                builder.set_start_at(int(start_at * 1000))
-
-            req = builder.build()
-            # Ledger is under account_api, but we initialized 'rest' -> 'futures_svc'.
-            # Wait, Ledger is Account API (get_futures_ledger).
-            # In SDK: self.client.rest_service().get_account_service().get_account_api().get_futures_ledger(...)
-            # But earlier I only initialized `self.futures_svc`.
-
             account_svc = self.client.rest_service().get_account_service()
             account_api = account_svc.get_account_api()
 
-            resp = account_api.get_futures_ledger(req)
+            while True:
+                builder = GetFuturesLedgerReqBuilder().set_type('RealisedPNL')
+                if start_at:
+                    builder.set_start_at(int(start_at * 1000))
 
-            results = []
-            if resp.data_list:
+                builder.set_offset(offset)
+                builder.set_max_count(limit)
+
+                req = builder.build()
+                resp = account_api.get_futures_ledger(req)
+
+                if not resp.data_list:
+                    break
+
                 for l in resp.data_list:
                     results.append({
                         'timestamp': float(l.time) / 1000,
-                        'amount': float(l.amount), # This is the PnL amount (can be negative)
+                        'amount': float(l.amount),
                         'type': l.type,
                         'currency': l.currency,
-                        'remark': l.remark # Sometimes contains OrderID or Symbol info?
+                        'remark': l.remark
                     })
+
+                if len(resp.data_list) < limit:
+                    break
+
+                offset += limit
+                time.sleep(0.1)
+
             return results
         except Exception as e:
             self.logger.error(f"⚠️ Ledger History Error: {e}")
-            return []
+            return results
