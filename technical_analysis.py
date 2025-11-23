@@ -21,6 +21,31 @@ def calculate_rsi(df, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi.iloc[-1]
 
+def calculate_stoch_rsi(df, period=14, k_period=3, d_period=3):
+    """
+    Calcola Stochastic RSI per identificare punti di svolta precisi.
+    Ritorna K e D lines.
+    """
+    close = df['close']
+    delta = close.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+
+    min_rsi = rsi.rolling(window=period).min()
+    max_rsi = rsi.rolling(window=period).max()
+
+    stoch = ((rsi - min_rsi) / (max_rsi - min_rsi)) * 100
+    k = stoch.rolling(window=k_period).mean()
+    d = k.rolling(window=d_period).mean()
+
+    return {
+        'k': k.iloc[-1],
+        'd': d.iloc[-1]
+    }
+
 def calculate_macd(df, fast=12, slow=26, signal=9):
     """
     Calcola MACD (Moving Average Convergence Divergence).
@@ -62,6 +87,41 @@ def calculate_bollinger_bands(df, window=20, no_of_std=2):
 
 def calculate_ema(df, span=200):
     return df['close'].ewm(span=span, adjust=False).mean().iloc[-1]
+
+def calculate_adx(df, period=14):
+    """
+    Calcola ADX (Average Directional Index) per misurare la forza del trend.
+    """
+    high = df['high']
+    low = df['low']
+    close = df['close']
+
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    up_move = high - high.shift()
+    down_move = low.shift() - low
+
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+
+    plus_dm = pd.Series(plus_dm, index=df.index)
+    minus_dm = pd.Series(minus_dm, index=df.index)
+
+    # Smoothed TR, +DM, -DM
+    atr = tr.ewm(alpha=1/period, adjust=False).mean()
+    smoothed_plus_dm = plus_dm.ewm(alpha=1/period, adjust=False).mean()
+    smoothed_minus_dm = minus_dm.ewm(alpha=1/period, adjust=False).mean()
+
+    plus_di = 100 * (smoothed_plus_dm / atr)
+    minus_di = 100 * (smoothed_minus_dm / atr)
+
+    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+    adx = dx.ewm(alpha=1/period, adjust=False).mean()
+
+    return adx.iloc[-1]
 
 def calculate_order_imbalance(book, depth=10):
     """
