@@ -53,8 +53,7 @@ def settings():
                 'BASE_ORDER_SIZE': float,
                 'MAX_POSITIONS': int,
                 'STRATEGIST_INTERVAL': int,
-                'EXECUTION_INTERVAL': int,
-                'AI_MODEL': str
+                'EXECUTION_INTERVAL': int
             }
 
             for key, type_func in settings_map.items():
@@ -74,9 +73,8 @@ def settings():
         'LEVERAGE': db.get_setting('LEVERAGE', 10),
         'BASE_ORDER_SIZE': db.get_setting('BASE_ORDER_SIZE', 20),
         'MAX_POSITIONS': db.get_setting('MAX_POSITIONS', 3),
-        'STRATEGIST_INTERVAL': db.get_setting('STRATEGIST_INTERVAL', 60),
-        'EXECUTION_INTERVAL': db.get_setting('EXECUTION_INTERVAL', 10),
-        'AI_MODEL': db.get_setting('AI_MODEL', 'gemini-2.0-flash-lite')
+        'STRATEGIST_INTERVAL': db.get_setting('STRATEGIST_INTERVAL', 10),
+        'EXECUTION_INTERVAL': db.get_setting('EXECUTION_INTERVAL', 2)
     }
     return render_template('settings.html', settings=current_settings)
 

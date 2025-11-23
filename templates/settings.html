@@ -37,20 +37,17 @@
                         </div>
 
                         <!-- Timing & AI -->
-                        <h5 class="text-info mb-3 mt-4">Timing & Intelligenza</h5>
+                        <h5 class="text-info mb-3 mt-4">Timing & Scalping</h5>
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">Intervallo Strategia (sec)</label>
-                                <input type="number" name="STRATEGIST_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.STRATEGIST_INTERVAL }}" min="5">
-                                <div class="form-text text-muted">Consigliato: 60-120s per Swing Trading</div>
+                                <input type="number" name="STRATEGIST_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.STRATEGIST_INTERVAL }}" min="2">
+                                <div class="form-text text-muted">Consigliato: 10-30s per Scalping</div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Intervallo Esecuzione (sec)</label>
                                 <input type="number" name="EXECUTION_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.EXECUTION_INTERVAL }}" min="1">
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label">Modello AI</label>
-                                <input type="text" name="AI_MODEL" class="form-control bg-dark text-light border-secondary" value="{{ settings.AI_MODEL }}">
+                                <div class="form-text text-muted">Consigliato: 2-5s</div>
                             </div>
                         </div>
 
