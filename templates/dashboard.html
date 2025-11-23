@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2 class="mb-3">Panoramica Mercato</h2>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="col-md-3">
+            <div class="card p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">Posizioni Aperte</div>
+                        <div class="stat-value" id="active-pos-count">0</div>
+                    </div>
+                    <i class="fas fa-layer-group fa-2x text-secondary opacity-50"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">PnL Non Realizzato</div>
+                        <div class="stat-value" id="unrealized-pnl">$0.00</div>
+                    </div>
+                    <i class="fas fa-wallet fa-2x text-secondary opacity-50"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">PnL Realizzato (Sessione)</div>
+                        <div class="stat-value" id="realized-pnl">$0.00</div>
+                    </div>
+                    <i class="fas fa-history fa-2x text-secondary opacity-50"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">Strategia Attiva</div>
+                        <div class="h5 mt-2 mb-0 text-info">Swing AI</div>
+                    </div>
+                    <i class="fas fa-brain fa-2x text-secondary opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Positions & Logs -->
+    <div class="row">
+        <!-- Positions Table -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header bg-transparent border-bottom border-secondary">
+                    <h5 class="mb-0"><i class="fas fa-list-alt me-2"></i> Posizioni Attive</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover mb-0 align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Simbolo</th>
+                                    <th>Lato</th>
+                                    <th>Leva</th>
+                                    <th>Entry Price</th>
+                                    <th>Mark Price</th>
+                                    <th>PnL (ROE%)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positions-body">
+                                <tr><td colspan="6" class="text-center py-4 text-muted">Caricamento dati...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Console -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header bg-transparent border-bottom border-secondary d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-terminal me-2"></i> Log Sistema</h5>
+                    <small class="text-muted">Ultimi 50</small>
+                </div>
+                <div class="card-body log-container bg-black" id="log-box">
+                    <!-- Logs injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function updateDashboard() {
+        // Stats & Positions
+        fetch('/api/stats')
+            .then(res => res.json())
+            .then(data => {
+                // KPIs
+                document.getElementById('active-pos-count').innerText = data.active_positions_count;
+
+                const unPnL = data.total_unrealized_pnl;
+                const unPnLEl = document.getElementById('unrealized-pnl');
+                unPnLEl.innerText = `$${unPnL.toFixed(2)}`;
+                unPnLEl.className = `stat-value ${unPnL >= 0 ? 'text-success-custom' : 'text-danger-custom'}`;
+
+                const rPnL = data.total_realized_pnl;
+                const rPnLEl = document.getElementById('realized-pnl');
+                rPnLEl.innerText = `$${rPnL.toFixed(2)}`;
+                rPnLEl.className = `stat-value ${rPnL >= 0 ? 'text-success-custom' : 'text-danger-custom'}`;
+
+                // Table
+                const tbody = document.getElementById('positions-body');
+                tbody.innerHTML = '';
+                if (data.positions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Nessuna posizione aperta</td></tr>';
+                } else {
+                    data.positions.forEach(pos => {
+                        const pnlColor = pos.unrealisedPnl >= 0 ? 'text-success-custom' : 'text-danger-custom';
+                        const sideBadge = pos.side === 'long' ? '<span class="badge bg-success">LONG</span>' : '<span class="badge bg-danger">SHORT</span>';
+
+                        const row = `
+                            <tr>
+                                <td class="fw-bold">${pos.symbol}</td>
+                                <td>${sideBadge}</td>
+                                <td>${pos.leverage}x</td>
+                                <td>${parseFloat(pos.entryPrice).toFixed(4)}</td>
+                                <td>${parseFloat(pos.markPrice).toFixed(4)}</td>
+                                <td class="${pnlColor} fw-bold">${parseFloat(pos.unrealisedPnl).toFixed(2)} (${(pos.unrealisedPnlPcnt * 100).toFixed(2)}%)</td>
+                            </tr>
+                        `;
+                        tbody.innerHTML += row;
+                    });
+                }
+            });
+
+        // Logs
+        fetch('/api/logs')
+            .then(res => res.json())
+            .then(logs => {
+                const logBox = document.getElementById('log-box');
+                logBox.innerHTML = '';
+                logs.forEach(log => {
+                    const date = new Date(log.timestamp * 1000).toLocaleTimeString();
+                    let color = '#a0a0a0';
+                    if(log.level === 'ERROR') color = '#ff4d4d';
+                    if(log.level === 'WARNING') color = '#ffc107';
+
+                    const entry = `<div class="log-entry" style="color: ${color}">
+                        <span class="text-muted">[${date}]</span> <strong>${log.module}:</strong> ${log.message}
+                    </div>`;
+                    logBox.innerHTML += entry;
+                });
+            });
+    }
+
+    setInterval(updateDashboard, 2000);
+    updateDashboard();
+</script>
+{% endblock %}

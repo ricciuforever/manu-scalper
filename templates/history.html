@@ -1,0 +1,231 @@
+
+{% extends "base.html" %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-12 d-flex justify-content-between align-items-center">
+            <h2><i class="fas fa-history me-2"></i> Storico & Performance</h2>
+            <div>
+                <select id="time-range" class="form-select bg-dark text-white border-secondary">
+                    <option value="30">Ultimi 30 Giorni</option>
+                    <option value="7">Ultimi 7 Giorni</option>
+                    <option value="90">Ultimi 90 Giorni</option>
+                    <option value="365">Ultimo Anno</option>
+                    <option value="0">Tutto</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card p-3">
+                <div class="text-muted small">PnL Totale Realizzato</div>
+                <div class="stat-value" id="total-pnl">$0.00</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3">
+                <div class="text-muted small">Win Rate</div>
+                <div class="stat-value text-info" id="win-rate">0%</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3">
+                <div class="text-muted small">Totale Trade</div>
+                <div class="stat-value" id="total-trades">0</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3">
+                <div class="text-muted small">Benchmark (BTC Buy & Hold)</div>
+                <div class="stat-value" id="benchmark-pnl">0%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card p-4">
+                <h5 class="card-title mb-4">Equity Curve vs Benchmark</h5>
+                <div style="height: 400px;">
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade History Table -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-transparent border-bottom border-secondary">
+                    <h5 class="mb-0"><i class="fas fa-list me-2"></i> Storico Operazioni</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover mb-0 align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Simbolo</th>
+                                    <th>Lato</th>
+                                    <th>Prezzo Ingresso</th>
+                                    <th>Qtà</th>
+                                    <th>Status</th>
+                                    <th>PnL ($)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-body">
+                                <tr><td colspan="7" class="text-center py-4 text-muted">Caricamento...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let chartInstance = null;
+
+function updateHistory() {
+    const days = document.getElementById('time-range').value;
+
+    fetch(`/api/history?days=${days}`)
+        .then(res => res.json())
+        .then(data => {
+            renderStats(data.stats);
+            renderTable(data.trades);
+            renderChart(data.equity_curve, data.benchmark_curve);
+        });
+}
+
+function renderStats(stats) {
+    const pnlEl = document.getElementById('total-pnl');
+    pnlEl.innerText = `$${stats.total_pnl.toFixed(2)}`;
+    pnlEl.className = `stat-value ${stats.total_pnl >= 0 ? 'text-success-custom' : 'text-danger-custom'}`;
+
+    document.getElementById('win-rate').innerText = `${stats.win_rate.toFixed(1)}%`;
+    document.getElementById('total-trades').innerText = stats.total_trades;
+
+    const benchEl = document.getElementById('benchmark-pnl');
+    benchEl.innerText = `${stats.benchmark_return.toFixed(2)}%`;
+    benchEl.className = `stat-value ${stats.benchmark_return >= 0 ? 'text-success-custom' : 'text-danger-custom'}`;
+}
+
+function renderTable(trades) {
+    const tbody = document.getElementById('history-body');
+    tbody.innerHTML = '';
+
+    if (trades.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">Nessuna operazione nel periodo selezionato.</td></tr>';
+        return;
+    }
+
+    trades.forEach(t => {
+        const date = new Date(t.timestamp * 1000).toLocaleString();
+        const sideBadge = t.side === 'buy' || t.side === 'long' ? '<span class="badge bg-success">LONG</span>' : '<span class="badge bg-danger">SHORT</span>';
+        const pnlClass = t.pnl >= 0 ? 'text-success-custom' : 'text-danger-custom';
+        const pnlText = t.pnl ? `$${t.pnl.toFixed(2)}` : '-';
+
+        const row = `
+            <tr>
+                <td>${date}</td>
+                <td class="fw-bold">${t.symbol}</td>
+                <td>${sideBadge}</td>
+                <td>${t.price}</td>
+                <td>${t.quantity}</td>
+                <td><span class="badge bg-secondary">${t.status}</span></td>
+                <td class="${pnlClass} fw-bold">${pnlText}</td>
+            </tr>
+        `;
+        tbody.innerHTML += row;
+    });
+}
+
+function renderChart(equityData, benchmarkData) {
+    const ctx = document.getElementById('equityChart').getContext('2d');
+
+    if (chartInstance) {
+        chartInstance.destroy();
+    }
+
+    const labels = equityData.map(d => new Date(d.timestamp * 1000).toLocaleDateString());
+    const equityValues = equityData.map(d => d.equity);
+    const benchmarkValues = benchmarkData.map(d => d.value); // Normalized % or Value
+
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Portfolio PnL ($)',
+                    data: equityValues,
+                    borderColor: '#00d4ff',
+                    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4
+                },
+                {
+                    label: 'BTC Buy & Hold (%)',
+                    data: benchmarkValues,
+                    borderColor: '#f7931a',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    fill: false,
+                    tension: 0.4,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: { labels: { color: '#e0e0e0' } }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#a0a0a0' },
+                    grid: { color: '#2d3246' }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    ticks: { color: '#00d4ff', callback: function(value) { return '$' + value; } },
+                    grid: { color: '#2d3246' }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    ticks: { color: '#f7931a', callback: function(value) { return value + '%'; } },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+document.getElementById('time-range').addEventListener('change', updateHistory);
+updateHistory();
+</script>
+{% endblock %}
