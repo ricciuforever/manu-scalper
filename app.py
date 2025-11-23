@@ -121,75 +121,98 @@ def api_history():
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    # Fetch Trades
-    query = "SELECT * FROM trades WHERE timestamp >= ? ORDER BY timestamp ASC"
+    # Fetch History Fills (Authoritative) instead of 'trades' (Intent)
+    # We only care about fills that have PnL (realized trades) for the equity curve,
+    # but maybe we want to list all fills in the table.
+    query = "SELECT * FROM history_fills WHERE timestamp >= ? ORDER BY timestamp ASC"
     cursor.execute(query, (limit_ts,))
     cols = [description[0] for description in cursor.description]
-    trades = [dict(zip(cols, row)) for row in cursor.fetchall()]
+    fills = [dict(zip(cols, row)) for row in cursor.fetchall()]
     conn.close()
 
-    # Filter only closed trades or trades with PnL != 0 for equity curve
-    # Assuming 'pnl' column is populated when trade is closed/partially closed
-    pnl_trades = [t for t in trades if t.get('pnl', 0) != 0]
+    # Calculate Metrics based on Fills
+    # Only fills with non-zero PnL are considered "Closing Trades" (Realized) in most contexts,
+    # OR we need to pair them.
+    # For simplicity, if PnL is recorded, it's a realized PnL event (funding fee or close).
+
+    # Filter for table display (All fills)
+    display_trades = fills
+
+    # Filter for Stats & Equity (Realized PnL only)
+    # Note: KuCoin PnL in fills might be negative for losses, positive for wins.
+    # Fees are separate. Net PnL = PnL - Fee?
+    # Usually 'pnl' in fill is the Realized PnL of the contract.
+    pnl_events = [f for f in fills if f.get('pnl', 0) != 0 or f.get('fee', 0) > 0]
 
     equity_curve = []
     cumulative_pnl = 0
     win_count = 0
-    total_closed = 0
+    loss_count = 0
 
-    if not pnl_trades:
-        # Add at least a starting point
-        equity_curve.append({'timestamp': time.time(), 'equity': 0})
-    else:
-        # Start from 0 at the beginning of the period?
-        # Or just plot cumulative PnL over time.
-        equity_curve.append({'timestamp': pnl_trades[0]['timestamp'] - 1, 'equity': 0})
+    # Initialize equity curve start
+    start_ts = limit_ts if limit_ts > 0 else (fills[0]['timestamp'] - 3600 if fills else time.time() - 86400)
+    equity_curve.append({'timestamp': start_ts, 'equity': 0})
 
-        for t in pnl_trades:
-            pnl = t['pnl']
-            cumulative_pnl += pnl
+    for f in fills:
+        # Net PnL = Realized PnL - Fee
+        # Assuming 'pnl' is gross realized pnl from the trade engine
+        gross_pnl = f.get('pnl', 0)
+        fee = f.get('fee', 0)
+        net_pnl = gross_pnl - fee
+
+        if net_pnl != 0:
+            cumulative_pnl += net_pnl
             equity_curve.append({
-                'timestamp': t['timestamp'],
+                'timestamp': f['timestamp'],
                 'equity': cumulative_pnl
             })
 
-            total_closed += 1
-            if pnl > 0: win_count += 1
+            # Count Wins/Losses based on Net PnL of Closing trades (usually larger magnitude than just funding)
+            # Heuristic: If abs(net_pnl) > 0.05 (filter dust/funding)
+            if abs(net_pnl) > 0.05:
+                if net_pnl > 0: win_count += 1
+                else: loss_count += 1
 
+    total_closed = win_count + loss_count
     win_rate = (win_count / total_closed * 100) if total_closed > 0 else 0
 
     # Fetch Benchmark (BTC) Data
     exchange = get_exchange()
     benchmark_curve = []
+    benchmark_return = 0
 
     if exchange:
-        # Determine number of klines needed based on days. Default to 1 day candles.
-        # If days < 2, use 1h candles? Let's stick to 1d for simplicity or 4h.
         tf = '1d'
-        limit = days if days > 0 else 365 # Default 1 year if "All"
+        limit = days if days > 0 else 365
         if days == 0: limit = 365
 
-        # Fetch BTC History
+        # If days is small (e.g. 1), use 1h candles for better resolution
+        if days <= 2:
+            tf = '1h'
+            limit = days * 24
+
         btc_data = exchange.get_historical_data('BTC/USDT:USDT', tf, limit=limit)
 
         if not btc_data.empty:
-            # Normalize to % change from start
             start_price = btc_data.iloc[0]['close']
+            end_price = btc_data.iloc[-1]['close']
+            benchmark_return = ((end_price - start_price) / start_price) * 100
+
             for _, row in btc_data.iterrows():
-                ts = row['timestamp'] / 1000 # BTC data is usually in ms
+                ts = row['timestamp'] / 1000
                 price = row['close']
                 pct_change = ((price - start_price) / start_price) * 100
                 benchmark_curve.append({'timestamp': ts, 'value': pct_change})
 
     return jsonify({
-        'trades': trades[::-1], # Reverse for table (newest first)
+        'trades': display_trades[::-1], # Newest first
         'equity_curve': equity_curve,
         'benchmark_curve': benchmark_curve,
         'stats': {
             'total_pnl': cumulative_pnl,
             'win_rate': win_rate,
-            'total_trades': len(trades),
-            'benchmark_return': benchmark_curve[-1]['value'] if benchmark_curve else 0
+            'total_trades': len(display_trades),
+            'benchmark_return': benchmark_return
         }
     })
 
