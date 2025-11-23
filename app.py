@@ -87,11 +87,9 @@ def api_stats():
     total_unrealized = sum([p.get('unrealisedPnl', 0) for p in open_positions])
 
     # Recupera Trades Recenti
-    conn = db.get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM trades ORDER BY timestamp DESC LIMIT 50")
-    cols = [description[0] for description in cursor.description]
-    trades = [dict(zip(cols, row)) for row in cursor.fetchall()]
+    # Recupera Trades Recenti (History Fills)
+    # Preferiamo mostrare gli ultimi fills reali invece della tabella 'trades' interna che è incompleta
+    history_fills = db.get_history_fills(limit=10)
 
     # Calcola PnL Realizzato Totale (Sessione odierna UTC)
     # Start of day UTC timestamp
@@ -99,10 +97,11 @@ def api_stats():
     start_of_day = datetime(now.year, now.month, now.day)
     start_ts = start_of_day.timestamp()
 
-    cursor.execute("SELECT SUM(pnl) FROM trades WHERE timestamp >= ?", (start_ts,))
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT SUM(amount) FROM history_ledger WHERE timestamp >= ? AND type = 'RealisedPNL'", (start_ts,))
     row = cursor.fetchone()
     realized_pnl = row[0] if row and row[0] is not None else 0.0
-
     conn.close()
 
     # Bot Status
@@ -116,55 +115,67 @@ def api_stats():
         'total_unrealized_pnl': total_unrealized,
         'total_realized_pnl': realized_pnl,
         'positions': open_positions,
-        'recent_trades': trades[:10]
+        'recent_trades': history_fills # Now returning fills structure
     })
 
 @app.route('/api/history')
 def api_history():
     days = int(request.args.get('days', 30))
-    limit_ts = 0
-    if days > 0:
-        limit_ts = time.time() - (days * 86400)
 
-    conn = db.get_connection()
-    cursor = conn.cursor()
+    # 1. Fetch Executions (Fills) for the Table
+    fills = db.get_history_fills(limit=200, days=days)
 
-    # Fetch Trades
-    query = "SELECT * FROM trades WHERE timestamp >= ? ORDER BY timestamp ASC"
-    cursor.execute(query, (limit_ts,))
-    cols = [description[0] for description in cursor.description]
-    trades = [dict(zip(cols, row)) for row in cursor.fetchall()]
-    conn.close()
-
-    # Filter only closed trades or trades with PnL != 0 for equity curve
-    # Assuming 'pnl' column is populated when trade is closed/partially closed
-    pnl_trades = [t for t in trades if t.get('pnl', 0) != 0]
+    # 2. Fetch Ledger PnL for Stats & Equity Curve
+    ledger_entries = db.get_history_ledger(days=days)
+    pnl_entries = [l for l in ledger_entries if l['type'] == 'RealisedPNL']
 
     equity_curve = []
     cumulative_pnl = 0
     win_count = 0
     total_closed = 0
 
-    if not pnl_trades:
-        # Add at least a starting point
+    if not pnl_entries:
         equity_curve.append({'timestamp': time.time(), 'equity': 0})
     else:
-        # Start from 0 at the beginning of the period?
-        # Or just plot cumulative PnL over time.
-        equity_curve.append({'timestamp': pnl_trades[0]['timestamp'] - 1, 'equity': 0})
+        # Sort by timestamp (asc)
+        pnl_entries.sort(key=lambda x: x['timestamp'])
 
-        for t in pnl_trades:
-            pnl = t['pnl']
+        # Add start point
+        equity_curve.append({'timestamp': pnl_entries[0]['timestamp'] - 1, 'equity': 0})
+
+        for entry in pnl_entries:
+            pnl = entry['amount']
             cumulative_pnl += pnl
+
             equity_curve.append({
-                'timestamp': t['timestamp'],
+                'timestamp': entry['timestamp'],
                 'equity': cumulative_pnl
             })
 
+            # Stats Calculation
+            # Ignore tiny dust < 0.01? Maybe not.
             total_closed += 1
             if pnl > 0: win_count += 1
 
     win_rate = (win_count / total_closed * 100) if total_closed > 0 else 0
+
+    # Format fills for frontend table
+    # Frontend expects: {timestamp, symbol, side, price, quantity, status='FILLED', pnl=?}
+    # PnL per fill is NOT in trade history. We have to map from Ledger or leave it blank/approx.
+    # For now we leave PnL blank ('-') or try to match if possible.
+    # Actually, we can just omit PnL in the table for individual fills if we can't map it,
+    # OR we can try to display the Fee.
+    formatted_fills = []
+    for f in fills:
+        formatted_fills.append({
+            'timestamp': f['timestamp'],
+            'symbol': f['symbol'],
+            'side': f['side'],
+            'price': f['price'],
+            'quantity': f['size'],
+            'status': 'FILLED',
+            'pnl': None # Hard to map 1:1 without orderId matching complex logic
+        })
 
     # Fetch Benchmark (BTC) Data
     exchange = get_exchange()

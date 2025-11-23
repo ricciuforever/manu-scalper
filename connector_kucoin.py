@@ -27,6 +27,10 @@ from kucoin_universal_sdk.generate.futures.positions.model_modify_margin_leverag
 from kucoin_universal_sdk.generate.futures.order.model_get_stop_order_list_req import GetStopOrderListReqBuilder
 from kucoin_universal_sdk.generate.futures.order.model_cancel_all_stop_orders_req import CancelAllStopOrdersReqBuilder
 
+# IMPORTS FOR HISTORY
+from kucoin_universal_sdk.generate.futures.order.model_get_trade_history_req import GetTradeHistoryReqBuilder
+from kucoin_universal_sdk.generate.account.account.model_get_futures_ledger_req import GetFuturesLedgerReqBuilder
+
 class KuCoinConnector:
     def __init__(self, api_key, secret, passphrase):
         self.logger = logging.getLogger("KuCoinConnector")
@@ -385,3 +389,77 @@ class KuCoinConnector:
         except Exception as e:
             self.logger.error(f"❌ MARKET ORDER FAIL {symbol}: {e}")
             return None
+
+    def get_trade_history(self, symbol, start_at=None, limit=20):
+        """
+        Recupera lo storico dei fills (esecuzioni) privati.
+        Questo endpoint contiene fees e timestamp ma NON il PnL realizzato.
+        """
+        sdk_symbol = self._to_sdk_symbol(symbol)
+        try:
+            builder = GetTradeHistoryReqBuilder().set_symbol(sdk_symbol)
+            if start_at:
+                builder.set_start_at(int(start_at * 1000)) # ms
+
+            req = builder.build()
+            resp = self.order_api.get_trade_history(req)
+
+            results = []
+            if resp.items:
+                for t in resp.items:
+                    # Convert to simple dict
+                    results.append({
+                        'tradeId': t.trade_id,
+                        'symbol': self._to_ccxt_symbol(t.symbol),
+                        'side': t.side,
+                        'price': float(t.price),
+                        'size': float(t.size),
+                        'value': float(t.value),
+                        'fee': float(t.fee or 0),
+                        'feeCurrency': t.fee_currency,
+                        'timestamp': t.trade_time / 1000, # Convert to sec
+                        'orderId': t.order_id,
+                        'tradeType': t.trade_type, # trade, settlement...
+                        'liquidity': t.liquidity
+                    })
+            return results
+        except Exception as e:
+            self.logger.error(f"⚠️ Trade History Error {symbol}: {e}")
+            return []
+
+    def get_ledger_history(self, start_at=None):
+        """
+        Recupera il registro transazioni (Ledger) per trovare il PnL Realizzato.
+        Il Ledger è globale, non per simbolo.
+        """
+        try:
+            # We want 'RealisedPNL' events.
+            builder = GetFuturesLedgerReqBuilder().set_type('RealisedPNL')
+            if start_at:
+                builder.set_start_at(int(start_at * 1000))
+
+            req = builder.build()
+            # Ledger is under account_api, but we initialized 'rest' -> 'futures_svc'.
+            # Wait, Ledger is Account API (get_futures_ledger).
+            # In SDK: self.client.rest_service().get_account_service().get_account_api().get_futures_ledger(...)
+            # But earlier I only initialized `self.futures_svc`.
+
+            account_svc = self.client.rest_service().get_account_service()
+            account_api = account_svc.get_account_api()
+
+            resp = account_api.get_futures_ledger(req)
+
+            results = []
+            if resp.data_list:
+                for l in resp.data_list:
+                    results.append({
+                        'timestamp': float(l.time) / 1000,
+                        'amount': float(l.amount), # This is the PnL amount (can be negative)
+                        'type': l.type,
+                        'currency': l.currency,
+                        'remark': l.remark # Sometimes contains OrderID or Symbol info?
+                    })
+            return results
+        except Exception as e:
+            self.logger.error(f"⚠️ Ledger History Error: {e}")
+            return []
