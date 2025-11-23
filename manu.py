@@ -63,13 +63,12 @@ def main():
     try:
         exchange = KuCoinConnector(KUCOIN_API_KEY, KUCOIN_SECRET, KUCOIN_PASSPHRASE)
         print(f"✅ Connesso a KuCoin.")
+        # Avvia il Bot in un thread separato solo se connesso
+        bot_thread = threading.Thread(target=bot_loop, args=(db, exchange), daemon=True)
+        bot_thread.start()
     except Exception as e:
-        print(f"❌ Errore Hardware: {e}")
-        return
-
-    # Avvia il Bot in un thread separato
-    bot_thread = threading.Thread(target=bot_loop, args=(db, exchange), daemon=True)
-    bot_thread.start()
+        print(f"❌ Errore Hardware (Bot Offline): {e}")
+        # Non facciamo return, così il web server parte comunque per debug/config
 
     # Avvia Flask Web Server (Main Thread)
     # Host 0.0.0.0 rende accessibile dall'esterno (o dal sandbox)
