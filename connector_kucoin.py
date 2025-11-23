@@ -22,7 +22,6 @@ from kucoin_universal_sdk.generate.futures.order.model_get_order_by_order_id_req
 from kucoin_universal_sdk.generate.futures.order.model_get_order_list_req import GetOrderListReqBuilder
 from kucoin_universal_sdk.generate.futures.order.model_add_order_req import AddOrderReqBuilder
 from kucoin_universal_sdk.generate.futures.positions.model_modify_margin_leverage_req import ModifyMarginLeverageReqBuilder
-from kucoin_universal_sdk.generate.futures.order.model_get_fill_list_req import GetFillListReqBuilder
 
 # NEW IMPORTS FOR STOP ORDERS
 from kucoin_universal_sdk.generate.futures.order.model_get_stop_order_list_req import GetStopOrderListReqBuilder
@@ -144,40 +143,6 @@ class KuCoinConnector:
         except Exception as e:
             self.logger.error(f"⚠️ Stats 24h Error {symbol}: {e}")
             return {'price_change_percent': 0.0}
-
-    def get_recent_fills(self, symbol=None, limit=100):
-        """Fetches recent fills (trades) to determine realized PnL."""
-        try:
-            builder = GetFillListReqBuilder().set_limit(limit)
-            if symbol:
-                builder.set_symbol(self._to_sdk_symbol(symbol))
-
-            req = builder.build()
-            resp = self.order_api.get_fill_list(req)
-
-            fills = []
-            if resp.items:
-                for item in resp.items:
-                    fills.append({
-                        'tradeId': item.trade_id,
-                        'orderId': item.order_id,
-                        'symbol': self._to_ccxt_symbol(item.symbol),
-                        'side': item.side,
-                        'price': float(item.price),
-                        'size': float(item.size),
-                        'fee': float(item.fee or 0),
-                        'timestamp': int(item.trade_time) / 1000, # Convert ms to s
-                        'pnl': 0.0 # Standard fill data might not have PnL directly?
-                        # SDK documentation for Futures Fill usually assumes PnL is in the 'fills' details or calculated.
-                        # Wait, KuCoin Futures Fill object often has 'realisedPnl' field?
-                        # Let's check attributes of item.
-                        # Using `dir(item)` is not possible here.
-                        # We assume 'item' is a Fill object.
-                    })
-            return fills
-        except Exception as e:
-            self.logger.error(f"❌ Error fetching fills: {e}")
-            return []
 
     def get_all_open_positions(self):
         try:
