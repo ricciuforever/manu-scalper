@@ -66,21 +66,6 @@ class DatabaseManager:
             )
         ''')
 
-        # History Fills Table (Authoritative Exchange Data)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS history_fills (
-                trade_id TEXT PRIMARY KEY,
-                order_id TEXT,
-                timestamp REAL,
-                symbol TEXT,
-                side TEXT,
-                price REAL,
-                size REAL,
-                fee REAL,
-                pnl REAL
-            )
-        ''')
-
         # State/Heartbeat Table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS state (
@@ -159,17 +144,6 @@ class DatabaseManager:
             INSERT INTO trades (timestamp, symbol, side, price, quantity, status, order_id, pnl)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (time.time(), symbol, side, price, quantity, status, order_id, pnl))
-        conn.commit()
-        conn.close()
-
-    def save_fill(self, trade_id, order_id, timestamp, symbol, side, price, size, fee, pnl):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        # Insert or Ignore to avoid duplicates
-        cursor.execute('''
-            INSERT OR IGNORE INTO history_fills (trade_id, order_id, timestamp, symbol, side, price, size, fee, pnl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (trade_id, order_id, timestamp, symbol, side, price, size, fee, pnl))
         conn.commit()
         conn.close()
 
