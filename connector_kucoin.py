@@ -183,11 +183,13 @@ class KuCoinConnector:
             return price # Return original price if no rounding rule is found
 
         increment = details['priceIncrement']
-        # Precision is the number of decimal places in the increment
-        # A simple way to calculate this without precision issues of log10
-        precision = 0
-        if "." in str(increment):
-            precision = len(str(increment).split('.')[1])
+
+        # To robustly handle scientific notation (e.g., 1e-5), we use the Decimal module
+        # to determine the number of decimal places from the price increment.
+        from decimal import Decimal
+
+        # Convert increment to string to avoid float representation issues with Decimal constructor.
+        precision = abs(Decimal(str(increment)).as_tuple().exponent)
 
         return round(price, precision)
 

@@ -51,7 +51,7 @@ class DatabaseManager:
             )
         ''')
 
-        # Trades Table
+        # Trades Table (Legacy, may be phased out)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,9 +62,7 @@ class DatabaseManager:
                 quantity REAL,
                 pnl REAL,
                 status TEXT,
-                order_id TEXT,
-                stop_loss REAL,
-                take_profit REAL
+                order_id TEXT
             )
         ''')
 
@@ -169,13 +167,13 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
-    def save_trade(self, symbol, side, price, quantity, status, order_id, pnl=0, stop_loss=None, take_profit=None):
+    def save_trade(self, symbol, side, price, quantity, status, order_id, pnl=0):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO trades (timestamp, symbol, side, price, quantity, status, order_id, pnl, stop_loss, take_profit)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (time.time(), symbol, side, price, quantity, status, order_id, pnl, stop_loss, take_profit))
+            INSERT INTO trades (timestamp, symbol, side, price, quantity, status, order_id, pnl)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (time.time(), symbol, side, price, quantity, status, order_id, pnl))
         conn.commit()
         conn.close()
 
