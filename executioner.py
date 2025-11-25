@@ -22,25 +22,21 @@ class Executioner:
 
         while True:
             exec_interval = self.db.get_setting('EXECUTION_INTERVAL', 5)
+            try:
+                open_positions = self.exchange.get_all_open_positions()
+                self.db.update_state('open_positions', open_positions)
 
-            open_positions = self.exchange.get_all_open_positions()
-            self.db.update_state('open_positions', open_positions)
-
-            if open_positions:
-                try:
+                if open_positions:
                     with self.risk_mgmt_lock:
                         self._manage_positions(open_positions)
-                except Exception as e:
-                    self.db.log("Executioner", f"CRITICAL Risk Mgmt Error: {e}", "ERROR")
 
-            if len(open_positions) < self.db.get_setting('MAX_POSITIONS', 5):
-                symbols = self.db.get_setting('SYMBOLS', [])
-                for symbol in symbols:
-                    if any(p['symbol'] == symbol for p in open_positions): continue
-                    try:
+                if len(open_positions) < self.db.get_setting('MAX_POSITIONS', 5):
+                    symbols = self.db.get_setting('SYMBOLS', [])
+                    for symbol in symbols:
+                        if any(p['symbol'] == symbol for p in open_positions): continue
                         self._check_entry_signals(symbol)
-                    except Exception as e:
-                        self.db.log("Executioner", f"Entry Check Error {symbol}: {e}", "ERROR")
+            except Exception as e:
+                self.db.log("Executioner", f"CRITICAL LOOP ERROR: {e}", "ERROR")
             time.sleep(exec_interval)
 
     def _manage_positions(self, positions):
@@ -53,69 +49,60 @@ class Executioner:
 
     def _ensure_protection_orders(self, pos):
         """
-        Verifies and places SL/TP orders. Uses AI-defined prices if available,
-        otherwise applies a fixed-percentage failsafe mechanism.
+        Verifies and places SL/TP orders using intelligent rounding.
+        Applies a failsafe if no AI parameters are found.
         """
         symbol = pos['symbol']
         side = pos['side']
         quantity = float(pos['quantity'])
         entry_price = float(pos['entryPrice'])
 
-        sl_price, tp_price = None, None
+        sl_price_raw, tp_price_raw = None, None
 
-        # 1. Try to get AI-defined prices from the database
         active_trade = self.db.get_active_trade(symbol)
         if active_trade and active_trade.get('stop_loss') and active_trade.get('take_profit'):
-            sl_price = active_trade['stop_loss']
-            tp_price = active_trade['take_profit']
-            self.db.log("Executioner", f"Verifying AI protection for {symbol}: SL={sl_price}, TP={tp_price}", "DEBUG")
+            sl_price_raw = active_trade['stop_loss']
+            tp_price_raw = active_trade['take_profit']
         else:
-            # 2. If no AI data, calculate failsafe prices
-            self.db.log("Executioner", f"No AI SL/TP found for {symbol}. Applying failsafe protection.", "WARNING")
+            self.db.log("Executioner", f"No AI SL/TP found for {symbol}. Applying failsafe.", "WARNING")
             if side == 'long':
-                sl_price = entry_price * (1 - FAILSAFE_SL_PERCENT)
-                tp_price = entry_price * (1 + FAILSAFE_TP_PERCENT)
-            else: # short
-                sl_price = entry_price * (1 + FAILSAFE_SL_PERCENT)
-                tp_price = entry_price * (1 - FAILSAFE_TP_PERCENT)
+                sl_price_raw = entry_price * (1 - FAILSAFE_SL_PERCENT)
+                tp_price_raw = entry_price * (1 + FAILSAFE_TP_PERCENT)
+            else:
+                sl_price_raw = entry_price * (1 + FAILSAFE_SL_PERCENT)
+                tp_price_raw = entry_price * (1 - FAILSAFE_TP_PERCENT)
+
+        # ** CRITICAL STEP: Round prices to the exchange's required precision **
+        sl_price = self.exchange.round_price(symbol, sl_price_raw)
+        tp_price = self.exchange.round_price(symbol, tp_price_raw)
 
         close_side = 'sell' if side == 'long' else 'buy'
         open_orders = self.exchange.get_open_orders(symbol)
 
         sl_found, tp_found = False, False
-        TOLERANCE = 1e-9
 
         for o in open_orders:
             stop_price = o.get('stopPrice')
             if o['side'] == close_side and stop_price:
-                stop_price = float(stop_price)
-                if abs(stop_price - sl_price) < TOLERANCE:
+                # Direct comparison is now safe because we rounded our calculated price
+                if float(stop_price) == sl_price:
                     sl_found = True
-                elif abs(stop_price - tp_price) < TOLERANCE:
+                elif float(stop_price) == tp_price:
                     tp_found = True
 
         if sl_found and tp_found:
-            return # Position is protected
+            return
 
-        # 3. Reset and place orders if protection is missing or incorrect
-        self.db.log("Executioner", f"Protection mismatch for {symbol} (SL Found: {sl_found}, TP Found: {tp_found}). Resetting.", "INFO")
-
+        self.db.log("Executioner", f"Protection mismatch for {symbol} (SL: {sl_found}, TP: {tp_found}). Resetting.", "INFO")
         self.exchange.cancel_all_orders(symbol)
 
-        # Place Stop Loss
         stop_dir_sl = 'down' if side == 'long' else 'up'
-        self.db.log("Executioner", f"Placing SL for {symbol} @ {sl_price}", "INFO")
-        sl_res = self.exchange.place_stop_market_order(symbol, close_side, quantity, sl_price, stop_dir_sl, pos.get('marginMode'))
-        if not sl_res: self.db.log("Executioner", f"FAILED to place SL for {symbol}", "ERROR")
+        self.exchange.place_stop_market_order(symbol, close_side, quantity, sl_price, stop_dir_sl, pos.get('marginMode'))
 
-        # Place Take Profit
         stop_dir_tp = 'up' if side == 'long' else 'down'
-        self.db.log("Executioner", f"Placing TP for {symbol} @ {tp_price}", "INFO")
-        tp_res = self.exchange.place_stop_market_order(symbol, close_side, quantity, tp_price, stop_dir_tp, pos.get('marginMode'))
-        if not tp_res: self.db.log("Executioner", f"FAILED to place TP for {symbol}", "ERROR")
+        self.exchange.place_stop_market_order(symbol, close_side, quantity, tp_price, stop_dir_tp, pos.get('marginMode'))
 
     def _check_entry_signals(self, symbol):
-        # ... (rest of the file is unchanged)
         state = self.shared_state.get(symbol, {})
         bias = state.get('bias', 'NEUTRAL')
 
@@ -133,17 +120,19 @@ class Executioner:
             self.shared_state[symbol]['bias'] = 'NEUTRAL'
             return
 
-        if bias == 'LONG':
-            self.db.log("Executioner", f"Confirming AI LONG on {symbol} (Conf: {confidence:.2f})", "INFO")
-            self._fire(symbol, 'buy', current_price, leverage, state['stop_loss'], state['take_profit'])
-            self.shared_state[symbol]['bias'] = 'NEUTRAL'
+        # ** CRITICAL STEP: Round AI prices before saving them **
+        sl = self.exchange.round_price(symbol, state['stop_loss'])
+        tp = self.exchange.round_price(symbol, state['take_profit'])
 
+        if bias == 'LONG':
+            self._fire(symbol, 'buy', current_price, leverage, sl, tp)
+            self.shared_state[symbol]['bias'] = 'NEUTRAL'
         elif bias == 'SHORT':
-            self.db.log("Executioner", f"Confirming AI SHORT on {symbol} (Conf: {confidence:.2f})", "INFO")
-            self._fire(symbol, 'sell', current_price, leverage, state['stop_loss'], state['take_profit'])
+            self._fire(symbol, 'sell', current_price, leverage, sl, tp)
             self.shared_state[symbol]['bias'] = 'NEUTRAL'
 
     def _fire(self, symbol, side, price, leverage, stop_loss, take_profit):
+        self.db.log("Executioner", f"Executing AI ENTRY {side} {symbol} @ {price} | SL: {stop_loss} TP: {take_profit}", "INFO")
         base_order_size = self.db.get_setting('BASE_ORDER_SIZE', 20)
         res = self.exchange.execute_trade(symbol, side, base_order_size, leverage)
         if res:
@@ -152,4 +141,3 @@ class Executioner:
                 stop_loss=stop_loss,
                 take_profit=take_profit
             )
-            self.db.log("Executioner", f"AI ENTRY {side} {symbol} @ {price} | SL: {stop_loss} TP: {take_profit}", "INFO")

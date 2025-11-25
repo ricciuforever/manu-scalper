@@ -56,6 +56,9 @@ class KuCoinConnector:
             self.order_api = self.futures_svc.get_order_api()
             self.funding_api = self.futures_svc.get_funding_fees_api()
 
+            # Cache symbol details on startup
+            self._cache_symbol_details()
+
             self.logger.info("✅ KuCoin Futures Connected (Universal SDK)")
         except Exception as e:
             self.logger.error(f"❌ Connection Failed: {e}")
@@ -148,21 +151,49 @@ class KuCoinConnector:
             self.logger.error(f"⚠️ Stats 24h Error {symbol}: {e}")
             return {'price_change_percent': 0.0}
 
-    def _ensure_symbol_map(self):
-        """Ensures symbol multipliers are cached."""
-        if not hasattr(self, 'symbol_map'):
-            self.symbol_map = {}
-            try:
-                resp = self.market_api.get_all_symbols()
-                if resp.data:
-                    for s in resp.data:
-                        self.symbol_map[s.symbol] = float(s.multiplier)
-            except Exception as e:
-                self.logger.error(f"⚠️ Error caching symbols: {e}")
+    def _cache_symbol_details(self):
+        """Caches symbol details like multiplier and priceIncrement."""
+        if hasattr(self, 'symbol_details') and self.symbol_details:
+            return # Already cached
+
+        self.symbol_details = {}
+        try:
+            # This endpoint provides contract details including precision
+            resp = self.market_api.get_all_symbols()
+            if resp.data:
+                for s in resp.data:
+                    self.symbol_details[s.symbol] = {
+                        'multiplier': float(s.multiplier),
+                        'priceIncrement': float(s.price_increment)
+                    }
+            self.logger.info(f"Cached details for {len(self.symbol_details)} symbols.")
+        except Exception as e:
+            self.logger.error(f"⚠️ FATAL: Error caching symbol details: {e}")
+
+    def round_price(self, symbol, price):
+        """Rounds a price to the correct precision for a given symbol."""
+        sdk_symbol = self._to_sdk_symbol(symbol)
+
+        if not hasattr(self, 'symbol_details') or sdk_symbol not in self.symbol_details:
+            self._cache_symbol_details() # Attempt to cache if missing
+
+        details = self.symbol_details.get(sdk_symbol)
+        if not details:
+            self.logger.warning(f"No symbol details for {symbol}, cannot round price.")
+            return price # Return original price if no rounding rule is found
+
+        increment = details['priceIncrement']
+        # Precision is the number of decimal places in the increment
+        # A simple way to calculate this without precision issues of log10
+        precision = 0
+        if "." in str(increment):
+            precision = len(str(increment).split('.')[1])
+
+        return round(price, precision)
 
     def get_all_open_positions(self):
         try:
-            self._ensure_symbol_map()
+            self._cache_symbol_details()
             req = GetPositionListReqBuilder().set_currency('USDT').build()
             resp = self.positions_api.get_position_list(req)
             results = []
@@ -174,7 +205,8 @@ class KuCoinConnector:
                         leverage = float(p.real_leverage or 0)
                         pnl = float(p.unrealised_pnl or 0)
                         sdk_symbol = p.symbol
-                        multiplier = self.symbol_map.get(sdk_symbol, 1.0)
+                        details = self.symbol_details.get(sdk_symbol, {})
+                        multiplier = details.get('multiplier', 1.0)
 
                         # Calculate ROE %
                         roe_pcnt = 0
@@ -333,8 +365,8 @@ class KuCoinConnector:
                 return None
 
             # 2. Recupera info sul contratto (Multiplier) per calcolare i lotti
-            self._ensure_symbol_map()
-            multiplier = self.symbol_map.get(sdk_symbol, 1.0)
+            details = self.symbol_details.get(sdk_symbol, {})
+            multiplier = details.get('multiplier', 1.0)
 
             # 3. Calcolo Size (Numero di Lotti)
             # Formula: (Margine * Leva) / (Prezzo * Multiplier)
