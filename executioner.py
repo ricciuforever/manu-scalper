@@ -5,6 +5,10 @@ import threading
 LAST_SL_CHECK = {}
 SL_CHECK_INTERVAL = 10
 
+# Failsafe percentages for unprotected positions
+FAILSAFE_SL_PERCENT = 0.015  # 1.5%
+FAILSAFE_TP_PERCENT = 0.030  # 3.0%
+
 class Executioner:
     def __init__(self, exchange, shared_state, db_manager):
         self.exchange = exchange
@@ -40,74 +44,78 @@ class Executioner:
             time.sleep(exec_interval)
 
     def _manage_positions(self, positions):
-        """Ensures AI-defined Stop Loss and Take Profit orders are active for all positions."""
+        """Ensures Stop Loss and Take Profit orders are active for all positions."""
         for pos in positions:
             symbol = pos['symbol']
             if time.time() - LAST_SL_CHECK.get(symbol, 0) > SL_CHECK_INTERVAL:
-                self._ensure_ai_protection_orders(pos)
+                self._ensure_protection_orders(pos)
                 LAST_SL_CHECK[symbol] = time.time()
 
-    def _ensure_ai_protection_orders(self, pos):
-        """Verifies and places SL/TP orders based on AI parameters from the DB."""
+    def _ensure_protection_orders(self, pos):
+        """
+        Verifies and places SL/TP orders. Uses AI-defined prices if available,
+        otherwise applies a fixed-percentage failsafe mechanism.
+        """
         symbol = pos['symbol']
         side = pos['side']
         quantity = float(pos['quantity'])
+        entry_price = float(pos['entryPrice'])
 
+        sl_price, tp_price = None, None
+
+        # 1. Try to get AI-defined prices from the database
         active_trade = self.db.get_active_trade(symbol)
-        if not active_trade or not active_trade.get('stop_loss') or not active_trade.get('take_profit'):
-            self.db.log("Executioner", f"WARNING: No AI SL/TP found for {symbol}. Position is unprotected.", "WARNING")
-            return
-
-        ai_sl_price = active_trade['stop_loss']
-        ai_tp_price = active_trade['take_profit']
-        self.db.log("Executioner", f"Verifying protection for {symbol}: AI SL={ai_sl_price}, AI TP={ai_tp_price}", "DEBUG")
+        if active_trade and active_trade.get('stop_loss') and active_trade.get('take_profit'):
+            sl_price = active_trade['stop_loss']
+            tp_price = active_trade['take_profit']
+            self.db.log("Executioner", f"Verifying AI protection for {symbol}: SL={sl_price}, TP={tp_price}", "DEBUG")
+        else:
+            # 2. If no AI data, calculate failsafe prices
+            self.db.log("Executioner", f"No AI SL/TP found for {symbol}. Applying failsafe protection.", "WARNING")
+            if side == 'long':
+                sl_price = entry_price * (1 - FAILSAFE_SL_PERCENT)
+                tp_price = entry_price * (1 + FAILSAFE_TP_PERCENT)
+            else: # short
+                sl_price = entry_price * (1 + FAILSAFE_SL_PERCENT)
+                tp_price = entry_price * (1 - FAILSAFE_TP_PERCENT)
 
         close_side = 'sell' if side == 'long' else 'buy'
         open_orders = self.exchange.get_open_orders(symbol)
 
-        sl_found = False
-        tp_found = False
-
-        # Use a small tolerance for float comparison
+        sl_found, tp_found = False, False
         TOLERANCE = 1e-9
 
         for o in open_orders:
             stop_price = o.get('stopPrice')
             if o['side'] == close_side and stop_price:
                 stop_price = float(stop_price)
-                self.db.log("Executioner", f"Found open stop order for {symbol}: Side={o['side']}, StopPrice={stop_price}", "DEBUG")
-                if abs(stop_price - ai_sl_price) < TOLERANCE:
+                if abs(stop_price - sl_price) < TOLERANCE:
                     sl_found = True
-                    self.db.log("Executioner", f"Matched AI SL for {symbol} at {stop_price}", "INFO")
-                elif abs(stop_price - ai_tp_price) < TOLERANCE:
+                elif abs(stop_price - tp_price) < TOLERANCE:
                     tp_found = True
-                    self.db.log("Executioner", f"Matched AI TP for {symbol} at {stop_price}", "INFO")
 
         if sl_found and tp_found:
-            return # All good
+            return # Position is protected
 
-        self.db.log("Executioner", f"Order Mismatch for {symbol} (SL Found: {sl_found}, TP Found: {tp_found}). Resetting protection.", "WARNING")
+        # 3. Reset and place orders if protection is missing or incorrect
+        self.db.log("Executioner", f"Protection mismatch for {symbol} (SL Found: {sl_found}, TP Found: {tp_found}). Resetting.", "INFO")
 
-        cancel_res = self.exchange.cancel_all_orders(symbol)
-        if not cancel_res:
-             self.db.log("Executioner", f"Failed to cancel orders for {symbol} during reset. Aborting.", "ERROR")
-             return
+        self.exchange.cancel_all_orders(symbol)
 
-        # Place AI-defined Stop Loss
+        # Place Stop Loss
         stop_dir_sl = 'down' if side == 'long' else 'up'
-        self.db.log("Executioner", f"Placing AI SL for {symbol} @ {ai_sl_price}", "INFO")
-        sl_res = self.exchange.place_stop_market_order(symbol, close_side, quantity, ai_sl_price, stop_dir_sl, pos.get('marginMode'))
-        if not sl_res:
-            self.db.log("Executioner", f"FAILED to place AI SL for {symbol} @ {ai_sl_price}", "ERROR")
+        self.db.log("Executioner", f"Placing SL for {symbol} @ {sl_price}", "INFO")
+        sl_res = self.exchange.place_stop_market_order(symbol, close_side, quantity, sl_price, stop_dir_sl, pos.get('marginMode'))
+        if not sl_res: self.db.log("Executioner", f"FAILED to place SL for {symbol}", "ERROR")
 
-        # Place AI-defined Take Profit
+        # Place Take Profit
         stop_dir_tp = 'up' if side == 'long' else 'down'
-        self.db.log("Executioner", f"Placing AI TP for {symbol} @ {ai_tp_price}", "INFO")
-        tp_res = self.exchange.place_stop_market_order(symbol, close_side, quantity, ai_tp_price, stop_dir_tp, pos.get('marginMode'))
-        if not tp_res:
-            self.db.log("Executioner", f"FAILED to place AI TP for {symbol} @ {ai_tp_price}", "ERROR")
+        self.db.log("Executioner", f"Placing TP for {symbol} @ {tp_price}", "INFO")
+        tp_res = self.exchange.place_stop_market_order(symbol, close_side, quantity, tp_price, stop_dir_tp, pos.get('marginMode'))
+        if not tp_res: self.db.log("Executioner", f"FAILED to place TP for {symbol}", "ERROR")
 
     def _check_entry_signals(self, symbol):
+        # ... (rest of the file is unchanged)
         state = self.shared_state.get(symbol, {})
         bias = state.get('bias', 'NEUTRAL')
 
