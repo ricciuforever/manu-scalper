@@ -13,7 +13,7 @@ app = Flask(__name__)
 app.secret_key = 'super_secret_manu_key'
 
 app.config['BASIC_AUTH_USERNAME'] = 'admin'
-app.config['BASIC_AUTH_PASSWORD'] = 'Giuisy.7@'
+app.config['BASIC_AUTH_PASSWORD'] = config.ADMIN_PASSWORD
 app.config['BASIC_AUTH_FORCE'] = False
 
 basic_auth = BasicAuth(app)
