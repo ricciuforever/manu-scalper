@@ -1,33 +1,32 @@
 import time
 import technical_analysis as ta
 import pandas as pd
+from manu_agent import AIAgent
 
 class Strategist:
     def __init__(self, exchange, shared_state, db_manager):
         self.exchange = exchange
         self.shared_state = shared_state
         self.db = db_manager
-        # Removed AI Initialization
+        self.ai_agent = AIAgent(db_manager)
 
     def run(self):
-        print("⚡ STRATEGIST: Online. Modalità HIGH-FREQUENCY SCALPING.")
+        print("🤖 STRATEGIST: Online. Modalità AUTONOMOUS AI AGENT.")
         while True:
-            # Scalping richiede intervalli molto brevi (es. 10s)
-            interval = self.db.get_setting('STRATEGIST_INTERVAL', 10)
+            interval = self.db.get_setting('STRATEGIST_INTERVAL', 10) # Intervallo breve per test
             try:
-                self._run_analysis_cycle()
+                self._run_ai_analysis_cycle()
             except Exception as e:
-                print(f"⚡ CRITICAL STRATEGIST ERROR: {e}")
+                print(f"🤖 CRITICAL STRATEGIST ERROR: {e}")
                 self.db.log("Strategist", f"CRITICAL ERROR: {e}", "ERROR")
 
             time.sleep(interval)
 
-    def _run_analysis_cycle(self):
+    def _run_ai_analysis_cycle(self):
         symbols = self.db.get_setting('SYMBOLS', [])
         if not symbols:
              return
 
-        # Update DB state
         self.db.update_state('strategist', {'status': 'scanning', 'symbols_count': len(symbols)})
 
         open_positions = self.exchange.get_all_open_positions()
@@ -37,100 +36,55 @@ class Strategist:
             self.db.update_state('strategist', {'status': 'paused', 'reason': 'max_positions_reached'})
             return
 
-        # print(f"⚡ STRATEGIST: Analisi Scalp...") # Ridotto log spam
-
         for symbol in symbols:
-            # Salta se abbiamo già una posizione
             if any(p['symbol'] == symbol for p in open_positions):
                 continue
 
             try:
-                self._process_asset_for_scalping(symbol)
-                time.sleep(0.5) # Minimo delay per evitare rate limit
+                self._process_symbol_with_ai(symbol)
+                time.sleep(1)
             except Exception as e:
-                print(f"⚡ ERROR {symbol}: {e}")
-                self.db.log("Strategist", f"Scalp Error {symbol}: {e}", "ERROR")
+                print(f"🤖 ERROR processing {symbol} with AI: {e}")
+                self.db.log("Strategist", f"AI Error {symbol}: {e}", "ERROR")
 
-    def _process_asset_for_scalping(self, symbol):
-        # --- 1. DATA FETCHING ---
-        # 15m for MACRO TREND, 1m for TRIGGER
-        klines_1m = self.exchange.get_historical_data(symbol, '1m', limit=200)
-        klines_15m = self.exchange.get_historical_data(symbol, '15m', limit=200)
+    def _process_symbol_with_ai(self, symbol):
+        print(f"🧠 Analysing {symbol} with Autonomous Agent...")
 
-        if klines_1m.empty or klines_15m.empty:
-            return
-
-        # --- 2. MACRO TREND (15m) ---
-        # Trend Filter: Price > EMA 99 (15m)
-        ema99_15m = ta.calculate_ema(klines_15m, 99)
-        current_price_15m = klines_15m['close'].iloc[-1]
-
-        macro_trend = "NEUTRAL"
-        if current_price_15m > ema99_15m:
-            macro_trend = "BULLISH"
-        elif current_price_15m < ema99_15m:
-            macro_trend = "BEARISH"
-
-        # --- 3. TRIGGER INDICATORS (1m) ---
-        ema7 = ta.calculate_ema(klines_1m, 7)
-        ema25 = ta.calculate_ema(klines_1m, 25)
-        ema99 = ta.calculate_ema(klines_1m, 99)
-
-        stoch = ta.calculate_stoch_rsi(klines_1m) # k, d
-        current_price = klines_1m['close'].iloc[-1]
-
-        # --- 4. SCALPING LOGIC (Trend-Scalper) ---
-        bias = "NEUTRAL"
-        reason = ""
-        leverage = 10
-
-        # LOGICA LONG:
-        # 1. Macro Trend Bullish (15m Price > EMA 99)
-        # 2. Perfect Storm (1m):
-        #    - EMA Fan: EMA 7 > EMA 25 > EMA 99 (Ventaglio Aperto Up)
-        #    - Pullback: StochRSI < 20 (Oversold)
-        #    - Trigger: K cross D Up (K > D)
-        if macro_trend == "BULLISH":
-            # EMA Fan Check
-            if ema7 > ema25 and ema25 > ema99:
-                # Stoch Check
-                if stoch['k'] < 20 and stoch['k'] > stoch['d']:
-                    bias = "LONG"
-                    reason = f"Macro Bull + EMA Fan Up + Stoch Cross Up ({stoch['k']:.1f})"
-
-        # LOGICA SHORT:
-        # 1. Macro Trend Bearish (15m Price < EMA 99)
-        # 2. Perfect Storm (1m):
-        #    - EMA Fan: EMA 7 < EMA 25 < EMA 99 (Ventaglio Aperto Down)
-        #    - Pullback: StochRSI > 80 (Overbought)
-        #    - Trigger: K cross D Down (K < D)
-        if macro_trend == "BEARISH":
-            # EMA Fan Check
-            if ema7 < ema25 and ema25 < ema99:
-                # Stoch Check
-                if stoch['k'] > 80 and stoch['k'] < stoch['d']:
-                    bias = "SHORT"
-                    reason = f"Macro Bear + EMA Fan Down + Stoch Cross Down ({stoch['k']:.1f})"
-
-        # --- 5. METRICS UPDATE ---
-        if symbol not in self.shared_state: self.shared_state[symbol] = {}
-
-        self.shared_state[symbol] = {
-            'bias': bias,
-            'risk': 'HIGH',
-            'leverage': leverage,
-            'metrics': {
-                'macro_trend': macro_trend,
-                'ema7': ema7,
-                'ema25': ema25,
-                'ema99': ema99,
-                'stoch_k': stoch['k'],
-                'stoch_d': stoch['d']
-            }
+        timeframes = ['1m', '5m', '15m', '1h', '4h']
+        market_data = {
+            "symbol": symbol,
+            "current_price": self.exchange.get_ticker_price(symbol),
+            "klines": {},
+            "indicators": {}
         }
 
-        # Log decision only if signal
+        all_klines_valid = True
+        for tf in timeframes:
+            klines = self.exchange.get_historical_data(symbol, tf, limit=200)
+            if klines.empty:
+                all_klines_valid = False
+                break
+            market_data["klines"][tf] = {"close": klines['close'].tolist()[-5:]}
+            market_data["indicators"][tf] = {"rsi": ta.calculate_rsi(klines)}
+
+        if not all_klines_valid:
+            print(f"Skipping {symbol} due to incomplete kline data.")
+            return
+
+        ai_decision = self.ai_agent.get_trade_decision(symbol, market_data)
+
+        if not ai_decision or 'bias' not in ai_decision:
+            print(f"AI returned invalid or no decision for {symbol}.")
+            return
+
+        bias = ai_decision.get('bias', 'NEUTRAL')
+
+        if symbol not in self.shared_state: self.shared_state[symbol] = {}
+        self.shared_state[symbol] = ai_decision
+
         if bias != 'NEUTRAL':
-            self.db.save_signal(symbol, bias, "HIGH", leverage, reason)
-            print(f"🚀 SCALP SIGNAL {symbol}: {bias} ({reason})")
-            self.db.log("Strategist", f"SCALP {symbol}: {bias}. {reason}", "INFO")
+            reason = ai_decision.get('reason', 'N/A')
+            confidence = ai_decision.get('confidence', 0)
+            leverage = self.db.get_setting('LEVERAGE', 10)
+            print(f"💡 AI SIGNAL for {symbol}: {bias} (Confidence: {confidence:.2f}) - {reason}")
+            self.db.save_signal(symbol, bias, f"AI-{confidence:.2f}", leverage, reason)

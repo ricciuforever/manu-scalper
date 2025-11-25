@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block title %}Impostazioni{% endblock %}
+
 {% block content %}
 <div class="container">
     <div class="row justify-content-center">
@@ -16,11 +18,11 @@
                         <div class="mb-3">
                             <label class="form-label">Simboli (Lista JSON)</label>
                             <textarea name="symbols" class="form-control bg-dark text-light border-secondary" rows="3" required>{{ settings.SYMBOLS }}</textarea>
-                            <div class="form-text text-muted">Es. ["BTC-USDT", "ETH-USDT", "SOL-USDT"]</div>
+                            <div class="form-text text-muted">Es. ["BTC/USDT:USDT", "ETH/USDT:USDT"]</div>
                         </div>
 
                         <!-- Risk Management -->
-                        <h5 class="text-info mb-3 mt-4">Gestione Rischio (Keep Logic)</h5>
+                        <h5 class="text-info mb-3 mt-4">Gestione Rischio</h5>
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label">Leva (x)</label>
@@ -36,18 +38,33 @@
                             </div>
                         </div>
 
-                        <!-- Timing & AI -->
-                        <h5 class="text-info mb-3 mt-4">Timing & Scalping</h5>
+                        <!-- Timing -->
+                        <h5 class="text-info mb-3 mt-4">Timing</h5>
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">Intervallo Strategia (sec)</label>
-                                <input type="number" name="STRATEGIST_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.STRATEGIST_INTERVAL }}" min="2">
-                                <div class="form-text text-muted">Consigliato: 10-30s per Scalping</div>
+                                <input type="number" name="STRATEGIST_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.STRATEGIST_INTERVAL }}" min="10">
+                                <div class="form-text text-muted">Consigliato: 60s+ per AI</div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Intervallo Esecuzione (sec)</label>
-                                <input type="number" name="EXECUTION_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.EXECUTION_INTERVAL }}" min="1">
-                                <div class="form-text text-muted">Consigliato: 2-5s</div>
+                                <input type="number" name="EXECUTION_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.EXECUTION_INTERVAL }}" min="2">
+                                <div class="form-text text-muted">Consigliato: 5s+</div>
+                            </div>
+                        </div>
+
+                        <!-- AI Configuration -->
+                        <h5 class="text-info mb-3 mt-4">Autonomous AI Agent (Gemini)</h5>
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="ai_confidence_threshold" class="form-label">Soglia Minima Confidenza</label>
+                                <input type="number" id="ai_confidence_threshold" name="AI_CONFIDENCE_THRESHOLD" class="form-control bg-dark text-light border-secondary" value="{{ settings.AI_CONFIDENCE_THRESHOLD }}" min="0.1" max="1.0" step="0.05">
+                                <div class="form-text text-muted">L'IA non aprirà trade con una confidenza inferiore a questa soglia (es. 0.6 = 60%).</div>
+                            </div>
+                            <div class="col-md-12 mb-3">
+                                <label for="ai_prompt_textarea" class="form-label">AI System Prompt</label>
+                                <textarea id="ai_prompt_textarea" name="AI_PROMPT" class="form-control bg-dark text-light border-secondary" rows="15" required>{{ settings.AI_PROMPT }}</textarea>
+                                <div class="form-text text-muted">Modifica il comportamento e la logica decisionale dell'IA.</div>
                             </div>
                         </div>
 
