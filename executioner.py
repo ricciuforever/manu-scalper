@@ -27,8 +27,7 @@ class Executioner:
                     with self.risk_mgmt_lock:
                         self._manage_positions(open_positions)
                 except Exception as e:
-                    print(f"🔫 EXEC RISK ERROR: {e}")
-                    self.db.log("Executioner", f"Risk Mgmt Error: {e}", "ERROR")
+                    self.db.log("Executioner", f"CRITICAL Risk Mgmt Error: {e}", "ERROR")
 
             if len(open_positions) < self.db.get_setting('MAX_POSITIONS', 5):
                 symbols = self.db.get_setting('SYMBOLS', [])
@@ -37,8 +36,7 @@ class Executioner:
                     try:
                         self._check_entry_signals(symbol)
                     except Exception as e:
-                        print(f"🔫 EXEC ENTRY CHECK ERROR {symbol}: {e}")
-
+                        self.db.log("Executioner", f"Entry Check Error {symbol}: {e}", "ERROR")
             time.sleep(exec_interval)
 
     def _manage_positions(self, positions):
@@ -50,50 +48,64 @@ class Executioner:
                 LAST_SL_CHECK[symbol] = time.time()
 
     def _ensure_ai_protection_orders(self, pos):
-        """
-        Verifies and places SL/TP orders based on the parameters defined by the AI
-        at the time of the trade entry, retrieved from the local database.
-        """
+        """Verifies and places SL/TP orders based on AI parameters from the DB."""
         symbol = pos['symbol']
         side = pos['side']
         quantity = float(pos['quantity'])
 
-        # 1. Retrieve the active trade details from our DB
         active_trade = self.db.get_active_trade(symbol)
         if not active_trade or not active_trade.get('stop_loss') or not active_trade.get('take_profit'):
-            print(f"⚠️ WARNING: Could not find AI SL/TP for active position {symbol}. Using fixed failsafe.")
-            # TODO: Implement a failsafe (e.g., fixed % SL/TP)
+            self.db.log("Executioner", f"WARNING: No AI SL/TP found for {symbol}. Position is unprotected.", "WARNING")
             return
 
         ai_sl_price = active_trade['stop_loss']
         ai_tp_price = active_trade['take_profit']
+        self.db.log("Executioner", f"Verifying protection for {symbol}: AI SL={ai_sl_price}, AI TP={ai_tp_price}", "DEBUG")
 
         close_side = 'sell' if side == 'long' else 'buy'
-
-        # 2. Check existing open orders
         open_orders = self.exchange.get_open_orders(symbol)
 
-        sl_orders = [o for o in open_orders if o['side'] == close_side and o.get('stopPrice') and float(o.get('stopPrice')) == ai_sl_price]
-        tp_orders = [o for o in open_orders if o['side'] == close_side and o.get('stopPrice') and float(o.get('stopPrice')) == ai_tp_price]
+        sl_found = False
+        tp_found = False
 
-        # 3. If structure is valid (exactly 1 SL and 1 TP at AI prices), do nothing.
-        if len(sl_orders) == 1 and len(tp_orders) == 1:
-            return
+        # Use a small tolerance for float comparison
+        TOLERANCE = 1e-9
 
-        # 4. If structure is invalid, reset all orders and place the correct ones.
-        print(f"♻️ AI Order Mismatch for {symbol} (SL: {len(sl_orders)}, TP: {len(tp_orders)}). Resetting protection...")
-        self.exchange.cancel_all_orders(symbol)
+        for o in open_orders:
+            stop_price = o.get('stopPrice')
+            if o['side'] == close_side and stop_price:
+                stop_price = float(stop_price)
+                self.db.log("Executioner", f"Found open stop order for {symbol}: Side={o['side']}, StopPrice={stop_price}", "DEBUG")
+                if abs(stop_price - ai_sl_price) < TOLERANCE:
+                    sl_found = True
+                    self.db.log("Executioner", f"Matched AI SL for {symbol} at {stop_price}", "INFO")
+                elif abs(stop_price - ai_tp_price) < TOLERANCE:
+                    tp_found = True
+                    self.db.log("Executioner", f"Matched AI TP for {symbol} at {stop_price}", "INFO")
 
-        # 5. Place AI-defined Stop Loss
+        if sl_found and tp_found:
+            return # All good
+
+        self.db.log("Executioner", f"Order Mismatch for {symbol} (SL Found: {sl_found}, TP Found: {tp_found}). Resetting protection.", "WARNING")
+
+        cancel_res = self.exchange.cancel_all_orders(symbol)
+        if not cancel_res:
+             self.db.log("Executioner", f"Failed to cancel orders for {symbol} during reset. Aborting.", "ERROR")
+             return
+
+        # Place AI-defined Stop Loss
         stop_dir_sl = 'down' if side == 'long' else 'up'
-        print(f"🛡️ Placing AI SL for {symbol} @ {ai_sl_price}")
-        self.exchange.place_stop_market_order(symbol, close_side, quantity, ai_sl_price, stop_dir_sl, pos.get('marginMode'))
+        self.db.log("Executioner", f"Placing AI SL for {symbol} @ {ai_sl_price}", "INFO")
+        sl_res = self.exchange.place_stop_market_order(symbol, close_side, quantity, ai_sl_price, stop_dir_sl, pos.get('marginMode'))
+        if not sl_res:
+            self.db.log("Executioner", f"FAILED to place AI SL for {symbol} @ {ai_sl_price}", "ERROR")
 
-        # 6. Place AI-defined Take Profit
+        # Place AI-defined Take Profit
         stop_dir_tp = 'up' if side == 'long' else 'down'
-        print(f"🎯 Placing AI TP for {symbol} @ {ai_tp_price}")
-        self.exchange.place_stop_market_order(symbol, close_side, quantity, ai_tp_price, stop_dir_tp, pos.get('marginMode'))
-
+        self.db.log("Executioner", f"Placing AI TP for {symbol} @ {ai_tp_price}", "INFO")
+        tp_res = self.exchange.place_stop_market_order(symbol, close_side, quantity, ai_tp_price, stop_dir_tp, pos.get('marginMode'))
+        if not tp_res:
+            self.db.log("Executioner", f"FAILED to place AI TP for {symbol} @ {ai_tp_price}", "ERROR")
 
     def _check_entry_signals(self, symbol):
         state = self.shared_state.get(symbol, {})
@@ -109,19 +121,17 @@ class Executioner:
         confidence = state.get('confidence', 0)
         confidence_threshold = self.db.get_setting('AI_CONFIDENCE_THRESHOLD', 0.6)
 
-        # Confidence filter
         if confidence < confidence_threshold:
-            print(f"Skipping {symbol} {bias} signal due to low confidence ({confidence:.2f} < {confidence_threshold})")
             self.shared_state[symbol]['bias'] = 'NEUTRAL'
             return
 
         if bias == 'LONG':
-            print(f"🚀 EXECUTIONER: Confirming AI LONG on {symbol} (Conf: {confidence:.2f})...")
+            self.db.log("Executioner", f"Confirming AI LONG on {symbol} (Conf: {confidence:.2f})", "INFO")
             self._fire(symbol, 'buy', current_price, leverage, state['stop_loss'], state['take_profit'])
             self.shared_state[symbol]['bias'] = 'NEUTRAL'
 
         elif bias == 'SHORT':
-            print(f"🚀 EXECUTIONER: Confirming AI SHORT on {symbol} (Conf: {confidence:.2f})...")
+            self.db.log("Executioner", f"Confirming AI SHORT on {symbol} (Conf: {confidence:.2f})", "INFO")
             self._fire(symbol, 'sell', current_price, leverage, state['stop_loss'], state['take_profit'])
             self.shared_state[symbol]['bias'] = 'NEUTRAL'
 
