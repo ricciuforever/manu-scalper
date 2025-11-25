@@ -86,5 +86,7 @@ class Strategist:
             reason = ai_decision.get('reason', 'N/A')
             confidence = ai_decision.get('confidence', 0)
             leverage = self.db.get_setting('LEVERAGE', 10)
-            print(f"💡 AI SIGNAL for {symbol}: {bias} (Confidence: {confidence:.2f}) - {reason}")
+            log_message = f"AI SIGNAL {symbol}: {bias}. Confidence: {confidence:.2f}. Reason: {reason}"
+            print(f"💡 {log_message}")
             self.db.save_signal(symbol, bias, f"AI-{confidence:.2f}", leverage, reason)
+            self.db.log("Strategist", log_message, "INFO")
