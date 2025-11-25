@@ -114,9 +114,55 @@ def api_logs():
 
 @app.route('/api/history')
 def api_history():
-    # This endpoint can be simplified or adjusted for grid bot stats later
-    # For now, it will continue to show PnL from the ledger.
+    """
+    Provides data for the history and performance page.
+    Calculates key stats from the `history_ledger` table.
+    """
     days = int(request.args.get('days', 30))
+
+    # 1. Fetch recent trade fills (for the trade history table)
     fills = db.get_history_fills(limit=200, days=days)
-    # ... rest of the history logic can remain for now ...
-    return jsonify({'trades': fills, 'equity_curve': [], 'stats': {}})
+
+    # 2. Fetch ledger data to calculate performance stats
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    # Get PnL entries from the last N days
+    start_ts = time.time() - (days * 86400)
+    cursor.execute(
+        "SELECT timestamp, amount FROM history_ledger WHERE type = 'RealisedPNL' AND timestamp >= ? ORDER BY timestamp ASC",
+        (start_ts,)
+    )
+    pnl_data = cursor.fetchall()
+    conn.close()
+
+    # 3. Calculate Equity Curve and Stats
+    equity_curve = []
+    total_realized_pnl = 0.0
+    winning_trades = 0
+    total_trades = len(pnl_data)
+
+    # Starting equity can be considered 0 for the period
+    cumulative_pnl = 0.0
+
+    for timestamp, amount in pnl_data:
+        cumulative_pnl += amount
+        equity_curve.append({'timestamp': timestamp, 'equity': cumulative_pnl})
+
+        total_realized_pnl += amount
+        if amount > 0:
+            winning_trades += 1
+
+    win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
+
+    stats = {
+        'total_realized_pnl': round(total_realized_pnl, 4),
+        'win_rate': round(win_rate, 2),
+        'total_trades': total_trades,
+    }
+
+    return jsonify({
+        'trades': fills,
+        'equity_curve': equity_curve,
+        'stats': stats
+    })
