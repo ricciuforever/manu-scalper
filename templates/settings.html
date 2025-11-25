@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Impostazioni{% endblock %}
+{% block title %}Impostazioni Grid Bot{% endblock %}
 
 {% block content %}
 <div class="container">
@@ -8,34 +8,60 @@
         <div class="col-lg-8">
             <div class="card">
                 <div class="card-header bg-transparent border-bottom border-secondary">
-                    <h4 class="mb-0"><i class="fas fa-sliders-h me-2"></i> Configurazione Bot</h4>
+                    <h4 class="mb-0"><i class="fas fa-th me-2"></i> Configurazione Grid Bot</h4>
                 </div>
                 <div class="card-body">
                     <form method="POST">
 
-                        <!-- Asset Management -->
-                        <h5 class="text-info mb-3">Asset & Mercato</h5>
+                        <!-- Core Grid Settings -->
+                        <h5 class="text-info mb-3">Parametri Principali</h5>
                         <div class="mb-3">
-                            <label class="form-label">Simboli (Lista JSON)</label>
-                            <textarea name="symbols" class="form-control bg-dark text-light border-secondary" rows="3" required>{{ settings.SYMBOLS }}</textarea>
-                            <div class="form-text text-muted">Es. ["BTC/USDT:USDT", "ETH/USDT:USDT"]</div>
+                            <label for="symbol" class="form-label">Simbolo di Trading</label>
+                            <input type="text" id="symbol" name="symbol" class="form-control bg-dark text-light border-secondary" value="{{ settings.SYMBOL }}" required>
+                            <div class="form-text text-muted">Il Grid Bot opera su un singolo simbolo alla volta (es. BTC/USDT:USDT).</div>
                         </div>
 
-                        <!-- Risk Management -->
-                        <h5 class="text-info mb-3 mt-4">Gestione Rischio</h5>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label for="grid_range_low" class="form-label">Range Griglia - Limite Inferiore</label>
+                                <input type="number" id="grid_range_low" name="GRID_RANGE_LOW" class="form-control bg-dark text-light border-secondary" value="{{ settings.GRID_RANGE_LOW }}" step="any" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="grid_range_high" class="form-label">Range Griglia - Limite Superiore</label>
+                                <input type="number" id="grid_range_high" name="GRID_RANGE_HIGH" class="form-control bg-dark text-light border-secondary" value="{{ settings.GRID_RANGE_HIGH }}" step="any" required>
+                            </div>
+                        </div>
+
                         <div class="row g-3">
-                            <div class="col-md-4">
-                                <label class="form-label">Leva (x)</label>
-                                <input type="number" name="LEVERAGE" class="form-control bg-dark text-light border-secondary" value="{{ settings.LEVERAGE }}" min="1" max="100">
+                             <div class="col-md-6">
+                                <label for="grid_levels" class="form-label">Numero di Livelli (Griglie)</label>
+                                <input type="number" id="grid_levels" name="GRID_LEVELS" class="form-control bg-dark text-light border-secondary" value="{{ settings.GRID_LEVELS }}" min="2" max="100" required>
+                                <div class="form-text text-muted">Quanti ordini creare all'interno del range.</div>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Dimensione Ordine ($)</label>
-                                <input type="number" name="BASE_ORDER_SIZE" class="form-control bg-dark text-light border-secondary" value="{{ settings.BASE_ORDER_SIZE }}" step="1">
+                            <div class="col-md-6">
+                                <label for="profit_per_grid" class="form-label">Profitto per Livello (%)</label>
+                                <input type="number" id="profit_per_grid" name="PROFIT_PER_GRID" class="form-control bg-dark text-light border-secondary" value="{{ settings.PROFIT_PER_GRID }}" step="0.01" required>
+                                <div class="form-text text-muted">Il profitto target per chiudere ogni trade della griglia.</div>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Max Posizioni</label>
-                                <input type="number" name="MAX_POSITIONS" class="form-control bg-dark text-light border-secondary" value="{{ settings.MAX_POSITIONS }}" min="1">
+                        </div>
+
+                        <!-- Risk & Sizing -->
+                        <h5 class="text-info mb-3 mt-4">Rischio e Dimensione</h5>
+                         <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="base_order_size" class="form-label">Dimensione per Livello ($)</label>
+                                <input type="number" id="base_order_size" name="BASE_ORDER_SIZE" class="form-control bg-dark text-light border-secondary" value="{{ settings.BASE_ORDER_SIZE }}" step="any" required>
+                                <div class="form-text text-muted">Valore in USDT per ogni ordine della griglia.</div>
                             </div>
+                            <div class="col-md-6">
+                                <label for="leverage" class="form-label">Leva (x)</label>
+                                <input type="number" id="leverage" name="LEVERAGE" class="form-control bg-dark text-light border-secondary" value="{{ settings.LEVERAGE }}" min="1" max="100">
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <label for="stop_loss_price" class="form-label">Stop Loss Globale (Prezzo)</label>
+                            <input type="number" id="stop_loss_price" name="STOP_LOSS_PRICE" class="form-control bg-dark text-light border-secondary" value="{{ settings.STOP_LOSS_PRICE }}" step="any" required>
+                            <div class="form-text text-muted">Se il prezzo raggiunge questo livello, tutte le posizioni verranno chiuse.</div>
                         </div>
 
                         <!-- Timing -->
@@ -44,27 +70,10 @@
                             <div class="col-md-6">
                                 <label class="form-label">Intervallo Strategia (sec)</label>
                                 <input type="number" name="STRATEGIST_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.STRATEGIST_INTERVAL }}" min="10">
-                                <div class="form-text text-muted">Consigliato: 60s+ per AI</div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Intervallo Esecuzione (sec)</label>
                                 <input type="number" name="EXECUTION_INTERVAL" class="form-control bg-dark text-light border-secondary" value="{{ settings.EXECUTION_INTERVAL }}" min="2">
-                                <div class="form-text text-muted">Consigliato: 5s+</div>
-                            </div>
-                        </div>
-
-                        <!-- AI Configuration -->
-                        <h5 class="text-info mb-3 mt-4">Autonomous AI Agent (Gemini)</h5>
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label for="ai_confidence_threshold" class="form-label">Soglia Minima Confidenza</label>
-                                <input type="number" id="ai_confidence_threshold" name="AI_CONFIDENCE_THRESHOLD" class="form-control bg-dark text-light border-secondary" value="{{ settings.AI_CONFIDENCE_THRESHOLD }}" min="0.1" max="1.0" step="0.05">
-                                <div class="form-text text-muted">L'IA non aprirà trade con una confidenza inferiore a questa soglia (es. 0.6 = 60%).</div>
-                            </div>
-                            <div class="col-md-12 mb-3">
-                                <label for="ai_prompt_textarea" class="form-label">AI System Prompt</label>
-                                <textarea id="ai_prompt_textarea" name="AI_PROMPT" class="form-control bg-dark text-light border-secondary" rows="15" required>{{ settings.AI_PROMPT }}</textarea>
-                                <div class="form-text text-muted">Modifica il comportamento e la logica decisionale dell'IA.</div>
                             </div>
                         </div>
 
@@ -72,7 +81,7 @@
 
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="fas fa-save me-2"></i> Salva Impostazioni
+                                <i class="fas fa-save me-2"></i> Salva Impostazioni Griglia
                             </button>
                         </div>
                     </form>

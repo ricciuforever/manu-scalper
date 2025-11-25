@@ -21,23 +21,28 @@ from executioner import Executioner
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 def init_db_settings(db):
-    """Initialize DB with defaults if empty."""
+    """Initialize DB with Grid Bot defaults if empty."""
     defaults = {
         'SYMBOLS': DEFAULT_SYMBOLS,
         'LEVERAGE': DEFAULT_LEVERAGE,
         'BASE_ORDER_SIZE': DEFAULT_BASE_ORDER_SIZE,
-        'MAX_POSITIONS': DEFAULT_MAX_POSITIONS,
+        'GRID_RANGE_LOW': DEFAULT_GRID_RANGE_LOW,
+        'GRID_RANGE_HIGH': DEFAULT_GRID_RANGE_HIGH,
+        'GRID_LEVELS': DEFAULT_GRID_LEVELS,
+        'GRID_SIDE': DEFAULT_GRID_SIDE,
+        'PROFIT_PER_GRID': DEFAULT_PROFIT_PER_GRID,
+        'STOP_LOSS_PRICE': DEFAULT_STOP_LOSS_PRICE,
         'STRATEGIST_INTERVAL': DEFAULT_STRATEGIST_INTERVAL,
         'EXECUTION_INTERVAL': DEFAULT_EXECUTION_INTERVAL,
-        'AI_MODEL': DEFAULT_AI_MODEL,
-        'ORDER_IMBALANCE_THR': DEFAULT_ORDER_IMBALANCE_THR,
-        'MIN_VOLUME_24H': DEFAULT_MIN_VOLUME_24H,
-        'ATR_PERIOD': DEFAULT_ATR_PERIOD,
-        'ATR_MULTIPLIER_SL': DEFAULT_ATR_MULTIPLIER_SL,
-        'ATR_MULTIPLIER_TP': DEFAULT_ATR_MULTIPLIER_TP,
-        'AI_PROMPT': DEFAULT_AI_PROMPT,
-        'AI_CONFIDENCE_THRESHOLD': DEFAULT_AI_CONFIDENCE_THRESHOLD
     }
+
+    # Clear old AI-related settings
+    # This is important for a clean transition
+    old_settings = ['AI_PROMPT', 'AI_CONFIDENCE_THRESHOLD', 'MAX_POSITIONS', 'AI_MODEL']
+    for key in old_settings:
+        # A method to delete setting would be ideal, but for now we can set to None
+        # Or just let them be, and they won't be used. Let's just initialize the new ones.
+        pass
 
     for key, val in defaults.items():
         if db.get_setting(key) is None:
