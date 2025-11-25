@@ -1,61 +1,60 @@
-
 {% extends "base.html" %}
 
-{% block head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-{% endblock %}
+{% block title %}Storico & Performance{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
-        <div class="col-md-12 d-flex justify-content-between align-items-center">
-            <h2><i class="fas fa-history me-2"></i> Storico & Performance</h2>
-            <div>
-                <select id="time-range" class="form-select bg-dark text-white border-secondary">
-                    <option value="30">Ultimi 30 Giorni</option>
-                    <option value="7">Ultimi 7 Giorni</option>
-                    <option value="90">Ultimi 90 Giorni</option>
-                    <option value="365">Ultimo Anno</option>
-                    <option value="0">Tutto</option>
-                </select>
+    <!-- Performance Stats -->
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Total Realized PnL</h6>
+                    <p id="total-pnl" class="stat-value">--</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Win Rate</h6>
+                    <p id="win-rate" class="stat-value">--</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Total Closed Trades</h6>
+                    <p id="total-trades" class="stat-value">--</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Benchmark (BTC)</h6>
+                    <p id="benchmark-return" class="stat-value">--</p>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Stats Cards -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card p-3">
-                <div class="text-muted small">PnL Totale Realizzato</div>
-                <div class="stat-value" id="total-pnl">$0.00</div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card p-3">
-                <div class="text-muted small">Win Rate</div>
-                <div class="stat-value text-info" id="win-rate">0%</div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card p-3">
-                <div class="text-muted small">Totale Trade</div>
-                <div class="stat-value" id="total-trades">0</div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card p-3">
-                <div class="text-muted small">Benchmark (BTC Buy & Hold)</div>
-                <div class="stat-value" id="benchmark-pnl">0%</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Chart -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="card p-4">
-                <h5 class="card-title mb-4">Equity Curve vs Benchmark</h5>
-                <div style="height: 400px;">
+    <!-- Equity Curve -->
+    <div class="row mt-4">
+        <div class="col">
+            <div class="card">
+                <div class="card-header bg-transparent">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-chart-area me-2"></i> Equity Curve</h5>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-sm btn-outline-info" onclick="fetchHistory(7)">7D</button>
+                            <button type="button" class="btn btn-sm btn-outline-info active" onclick="fetchHistory(30)">30D</button>
+                            <button type="button" class="btn btn-sm btn-outline-info" onclick="fetchHistory(0)">All</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
                     <canvas id="equityChart"></canvas>
                 </div>
             </div>
@@ -63,28 +62,27 @@
     </div>
 
     <!-- Trade History Table -->
-    <div class="row">
-        <div class="col-md-12">
+    <div class="row mt-4">
+        <div class="col">
             <div class="card">
-                <div class="card-header bg-transparent border-bottom border-secondary">
-                    <h5 class="mb-0"><i class="fas fa-list me-2"></i> Storico Operazioni</h5>
+                <div class="card-header bg-transparent">
+                    <h5 class="mb-0"><i class="fas fa-book me-2"></i> Storico Operazioni</h5>
                 </div>
-                <div class="card-body p-0">
+                <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-dark table-hover mb-0 align-middle">
+                        <table class="table table-dark table-striped table-hover">
                             <thead>
                                 <tr>
-                                    <th>Data</th>
-                                    <th>Simbolo</th>
-                                    <th>Lato</th>
-                                    <th>Prezzo Ingresso</th>
-                                    <th>Qtà</th>
-                                    <th>Status</th>
-                                    <th>PnL ($)</th>
+                                    <th>Close Time</th>
+                                    <th>Symbol</th>
+                                    <th>Side</th>
+                                    <th>Price</th>
+                                    <th>Size</th>
+                                    <th>Fee</th>
                                 </tr>
                             </thead>
-                            <tbody id="history-body">
-                                <tr><td colspan="7" class="text-center py-4 text-muted">Caricamento...</td></tr>
+                            <tbody id="history-table">
+                                <!-- Data populated by JS -->
                             </tbody>
                         </table>
                     </div>
@@ -97,135 +95,113 @@
 
 {% block scripts %}
 <script>
-let chartInstance = null;
+    let equityChart = null;
 
-function updateHistory() {
-    const days = document.getElementById('time-range').value;
-
-    fetch(`/api/history?days=${days}`)
-        .then(res => res.json())
-        .then(data => {
-            renderStats(data.stats);
-            renderTable(data.trades);
-            renderChart(data.equity_curve, data.benchmark_curve);
-        });
-}
-
-function renderStats(stats) {
-    const pnlEl = document.getElementById('total-pnl');
-    pnlEl.innerText = `$${stats.total_pnl.toFixed(2)}`;
-    pnlEl.className = `stat-value ${stats.total_pnl >= 0 ? 'text-success-custom' : 'text-danger-custom'}`;
-
-    document.getElementById('win-rate').innerText = `${stats.win_rate.toFixed(1)}%`;
-    document.getElementById('total-trades').innerText = stats.total_trades;
-
-    const benchEl = document.getElementById('benchmark-pnl');
-    benchEl.innerText = `${stats.benchmark_return.toFixed(2)}%`;
-    benchEl.className = `stat-value ${stats.benchmark_return >= 0 ? 'text-success-custom' : 'text-danger-custom'}`;
-}
-
-function renderTable(trades) {
-    const tbody = document.getElementById('history-body');
-    tbody.innerHTML = '';
-
-    if (trades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">Nessuna operazione nel periodo selezionato.</td></tr>';
-        return;
+    function formatCurrency(value, withSign = true) {
+        if (typeof value !== 'number') return '--';
+        const className = value >= 0 ? 'text-success-custom' : 'text-danger-custom';
+        const sign = withSign && value >= 0 ? '+' : '';
+        return `<span class="${className}">${sign}${value.toFixed(2)} USDT</span>`;
     }
 
-    trades.forEach(t => {
-        const date = new Date(t.timestamp * 1000).toLocaleString();
-        const sideBadge = t.side === 'buy' || t.side === 'long' ? '<span class="badge bg-success">LONG</span>' : '<span class="badge bg-danger">SHORT</span>';
-        const pnlClass = t.pnl >= 0 ? 'text-success-custom' : 'text-danger-custom';
-        const pnlText = t.pnl ? `$${t.pnl.toFixed(2)}` : '-';
-
-        const row = `
-            <tr>
-                <td>${date}</td>
-                <td class="fw-bold">${t.symbol}</td>
-                <td>${sideBadge}</td>
-                <td>${t.price}</td>
-                <td>${t.quantity}</td>
-                <td><span class="badge bg-secondary">${t.status}</span></td>
-                <td class="${pnlClass} fw-bold">${pnlText}</td>
-            </tr>
-        `;
-        tbody.innerHTML += row;
-    });
-}
-
-function renderChart(equityData, benchmarkData) {
-    const ctx = document.getElementById('equityChart').getContext('2d');
-
-    if (chartInstance) {
-        chartInstance.destroy();
+    function formatPercent(value) {
+         if (typeof value !== 'number') return '--';
+        const className = value >= 0 ? 'text-success-custom' : 'text-danger-custom';
+        const sign = value >= 0 ? '+' : '';
+        return `<span class="${className}">${sign}${value.toFixed(2)}%</span>`;
     }
 
-    const labels = equityData.map(d => new Date(d.timestamp * 1000).toLocaleDateString());
-    const equityValues = equityData.map(d => d.equity);
-    const benchmarkValues = benchmarkData.map(d => d.value); // Normalized % or Value
+    function fetchHistory(days = 30) {
+        // Update active button
+        document.querySelectorAll('.btn-group .btn').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
 
-    chartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Portfolio PnL ($)',
-                    data: equityValues,
-                    borderColor: '#00d4ff',
-                    backgroundColor: 'rgba(0, 212, 255, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4
-                },
-                {
-                    label: 'BTC Buy & Hold (%)',
-                    data: benchmarkValues,
-                    borderColor: '#f7931a',
-                    borderWidth: 2,
-                    borderDash: [5, 5],
-                    fill: false,
-                    tension: 0.4,
-                    yAxisID: 'y1'
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
-            plugins: {
-                legend: { labels: { color: '#e0e0e0' } }
-            },
-            scales: {
-                x: {
-                    ticks: { color: '#a0a0a0' },
-                    grid: { color: '#2d3246' }
-                },
-                y: {
-                    type: 'linear',
-                    display: true,
-                    position: 'left',
-                    ticks: { color: '#00d4ff', callback: function(value) { return '$' + value; } },
-                    grid: { color: '#2d3246' }
-                },
-                y1: {
-                    type: 'linear',
-                    display: true,
-                    position: 'right',
-                    ticks: { color: '#f7931a', callback: function(value) { return value + '%'; } },
-                    grid: { drawOnChartArea: false }
-                }
-            }
-        }
-    });
-}
+        fetch(`/api/history?days=${days}`)
+            .then(response => response.json())
+            .then(data => {
+                // Update stats
+                document.getElementById('total-pnl').innerHTML = formatCurrency(data.stats.total_pnl);
+                document.getElementById('win-rate').innerHTML = `${data.stats.win_rate.toFixed(2)}%`;
+                document.getElementById('total-trades').textContent = data.stats.total_trades;
+                document.getElementById('benchmark-return').innerHTML = formatPercent(data.stats.benchmark_return);
 
-document.getElementById('time-range').addEventListener('change', updateHistory);
-updateHistory();
+                // Populate history table
+                const tableBody = document.getElementById('history-table');
+                tableBody.innerHTML = '';
+                 if (data.trades.length > 0) {
+                    data.trades.forEach(t => {
+                        const row = `
+                            <tr>
+                                <td>${new Date(t.timestamp * 1000).toLocaleString()}</td>
+                                <td>${t.symbol}</td>
+                                 <td><span class="${t.side === 'buy' ? 'text-success-custom' : 'text-danger-custom'}">${t.side.toUpperCase()}</span></td>
+                                <td>${t.price}</td>
+                                <td>${t.quantity}</td>
+                                <td>-</td>
+                            </tr>`;
+                        tableBody.innerHTML += row;
+                    });
+                } else {
+                    tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Nessun dato storico per il periodo selezionato.</td></tr>';
+                }
+
+                // Update chart
+                const ctx = document.getElementById('equityChart').getContext('2d');
+                if (equityChart) {
+                    equityChart.destroy();
+                }
+
+                equityChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [
+                            {
+                                label: 'Equity Curve (USDT)',
+                                data: data.equity_curve.map(p => ({x: p.timestamp * 1000, y: p.equity})),
+                                borderColor: '#00d4ff',
+                                tension: 0.1,
+                                yAxisID: 'y'
+                            },
+                             {
+                                label: 'Benchmark (BTC %)',
+                                data: data.benchmark_curve.map(p => ({x: p.timestamp * 1000, y: p.value})),
+                                borderColor: '#ffc107',
+                                borderDash: [5, 5],
+                                tension: 0.1,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'day'
+                                },
+                                grid: { color: 'rgba(255,255,255,0.1)' }
+                            },
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: { display: true, text: 'Realized PnL (USDT)'},
+                                grid: { color: 'rgba(255,255,255,0.1)' }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: { display: true, text: 'Benchmark Return (%)'},
+                                grid: { drawOnChartArea: false }
+                            }
+                        }
+                    }
+                });
+            });
+    }
+
+    // Initial load
+    document.addEventListener('DOMContentLoaded', () => fetchHistory(30));
 </script>
 {% endblock %}

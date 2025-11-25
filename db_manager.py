@@ -62,7 +62,9 @@ class DatabaseManager:
                 quantity REAL,
                 pnl REAL,
                 status TEXT,
-                order_id TEXT
+                order_id TEXT,
+                stop_loss REAL,
+                take_profit REAL
             )
         ''')
 
@@ -167,15 +169,36 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
-    def save_trade(self, symbol, side, price, quantity, status, order_id, pnl=0):
+    def save_trade(self, symbol, side, price, quantity, status, order_id, pnl=0, stop_loss=None, take_profit=None):
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO trades (timestamp, symbol, side, price, quantity, status, order_id, pnl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (time.time(), symbol, side, price, quantity, status, order_id, pnl))
+            INSERT INTO trades (timestamp, symbol, side, price, quantity, status, order_id, pnl, stop_loss, take_profit)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (time.time(), symbol, side, price, quantity, status, order_id, pnl, stop_loss, take_profit))
         conn.commit()
         conn.close()
+
+    def get_active_trade(self, symbol):
+        """Fetches the most recent active (FILLED) trade for a symbol."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM trades
+            WHERE symbol = ? AND status = 'FILLED'
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (symbol,))
+
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        # Convert row to dict
+        cols = [description[0] for description in cursor.description]
+        trade = dict(zip(cols, row))
+        conn.close()
+        return trade
 
     def update_state(self, component, data):
         conn = self.get_connection()

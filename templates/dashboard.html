@@ -1,98 +1,110 @@
 {% extends "base.html" %}
 
+{% block title %}Dashboard{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <h2 class="mb-3">Panoramica Mercato</h2>
-        </div>
-
-        <!-- KPI Cards -->
+    <!-- Header Stats -->
+    <div class="row">
         <div class="col-md-3">
-            <div class="card p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">Posizioni Aperte</div>
-                        <div class="stat-value" id="active-pos-count">0</div>
-                    </div>
-                    <i class="fas fa-layer-group fa-2x text-secondary opacity-50"></i>
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Stato Bot</h6>
+                    <p id="bot-status" class="stat-value">--</p>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">PnL Non Realizzato</div>
-                        <div class="stat-value" id="unrealized-pnl">$0.00</div>
-                    </div>
-                    <i class="fas fa-wallet fa-2x text-secondary opacity-50"></i>
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Posizioni Attive</h6>
+                    <p id="active-positions" class="stat-value">--</p>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">PnL Realizzato (Sessione)</div>
-                        <div class="stat-value" id="realized-pnl">$0.00</div>
-                    </div>
-                    <i class="fas fa-history fa-2x text-secondary opacity-50"></i>
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">PnL Realized (Sessione)</h6>
+                    <p id="realized-pnl" class="stat-value">--</p>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">Strategia Attiva</div>
-                        <div class="h5 mt-2 mb-0 text-info">Swing AI</div>
-                    </div>
-                    <i class="fas fa-brain fa-2x text-secondary opacity-50"></i>
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">PnL Unrealized</h6>
+                    <p id="unrealized-pnl" class="stat-value">--</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Active Positions & Logs -->
-    <div class="row">
-        <!-- Positions Table -->
-        <div class="col-lg-8">
+    <!-- Posizioni Attive -->
+    <div class="row mt-4">
+        <div class="col">
             <div class="card">
-                <div class="card-header bg-transparent border-bottom border-secondary">
-                    <h5 class="mb-0"><i class="fas fa-list-alt me-2"></i> Posizioni Attive</h5>
+                <div class="card-header bg-transparent">
+                    <h5 class="mb-0"><i class="fas fa-folder-open me-2"></i> Posizioni Attive</h5>
                 </div>
-                <div class="card-body p-0">
+                <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-dark table-hover mb-0 align-middle">
+                        <table class="table table-dark table-striped table-hover">
                             <thead>
                                 <tr>
-                                    <th>Simbolo</th>
-                                    <th>Lato</th>
-                                    <th>Leva</th>
+                                    <th>Symbol</th>
+                                    <th>Side</th>
+                                    <th>Size</th>
                                     <th>Entry Price</th>
                                     <th>Mark Price</th>
-                                    <th>PnL (ROE%)</th>
+                                    <th>Unrealized PnL</th>
+                                    <th>Margin</th>
                                 </tr>
                             </thead>
-                            <tbody id="positions-body">
-                                <tr><td colspan="6" class="text-center py-4 text-muted">Caricamento dati...</td></tr>
+                            <tbody id="positions-table">
+                                <!-- Data will be populated by JS -->
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Logs Console -->
-        <div class="col-lg-4">
+    <!-- Trades Recenti & Logs -->
+    <div class="row mt-4">
+        <div class="col-md-7">
             <div class="card">
-                <div class="card-header bg-transparent border-bottom border-secondary d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-terminal me-2"></i> Log Sistema</h5>
-                    <small class="text-muted">Ultimi 50</small>
+                 <div class="card-header bg-transparent">
+                    <h5 class="mb-0"><i class="fas fa-history me-2"></i> Trades Recenti</h5>
                 </div>
-                <div class="card-body log-container bg-black" id="log-box">
-                    <!-- Logs injected here -->
+                <div class="card-body">
+                    <div class="table-responsive">
+                         <table class="table table-dark table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Symbol</th>
+                                    <th>Side</th>
+                                    <th>Price</th>
+                                    <th>Size</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-trades-table">
+                                <!-- Data from API -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-transparent">
+                    <h5 class="mb-0"><i class="fas fa-file-alt me-2"></i> Logs di Sistema</h5>
+                </div>
+                <div class="card-body log-container" id="logs-container">
+                    <!-- Logs will be populated by JS -->
                 </div>
             </div>
         </div>
@@ -102,65 +114,76 @@
 
 {% block scripts %}
 <script>
+    function formatCurrency(value) {
+        if (typeof value !== 'number') return '--';
+        const className = value >= 0 ? 'text-success-custom' : 'text-danger-custom';
+        return `<span class="${className}">${value.toFixed(2)} USDT</span>`;
+    }
+
     function updateDashboard() {
-        // Stats & Positions
         fetch('/api/stats')
-            .then(res => res.json())
+            .then(response => response.json())
             .then(data => {
-                // KPIs
-                document.getElementById('active-pos-count').innerText = data.active_positions_count;
+                document.getElementById('bot-status').textContent = data.status;
+                document.getElementById('active-positions').textContent = data.active_positions_count;
+                document.getElementById('realized-pnl').innerHTML = formatCurrency(data.total_realized_pnl);
+                document.getElementById('unrealized-pnl').innerHTML = formatCurrency(data.total_unrealized_pnl);
 
-                const unPnL = data.total_unrealized_pnl;
-                const unPnLEl = document.getElementById('unrealized-pnl');
-                unPnLEl.innerText = `$${unPnL.toFixed(2)}`;
-                unPnLEl.className = `stat-value ${unPnL >= 0 ? 'text-success-custom' : 'text-danger-custom'}`;
-
-                const rPnL = data.total_realized_pnl;
-                const rPnLEl = document.getElementById('realized-pnl');
-                rPnLEl.innerText = `$${rPnL.toFixed(2)}`;
-                rPnLEl.className = `stat-value ${rPnL >= 0 ? 'text-success-custom' : 'text-danger-custom'}`;
-
-                // Table
-                const tbody = document.getElementById('positions-body');
-                tbody.innerHTML = '';
-                if (data.positions.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Nessuna posizione aperta</td></tr>';
-                } else {
-                    data.positions.forEach(pos => {
-                        const pnlColor = pos.unrealisedPnl >= 0 ? 'text-success-custom' : 'text-danger-custom';
-                        const sideBadge = pos.side === 'long' ? '<span class="badge bg-success">LONG</span>' : '<span class="badge bg-danger">SHORT</span>';
-
+                // Populate positions table
+                const positionsTable = document.getElementById('positions-table');
+                positionsTable.innerHTML = '';
+                if (data.positions.length > 0) {
+                    data.positions.forEach(p => {
                         const row = `
                             <tr>
-                                <td class="fw-bold">${pos.symbol}</td>
-                                <td>${sideBadge}</td>
-                                <td>${pos.leverage}x</td>
-                                <td>${parseFloat(pos.entryPrice).toFixed(4)}</td>
-                                <td>${parseFloat(pos.markPrice).toFixed(4)}</td>
-                                <td class="${pnlColor} fw-bold">${parseFloat(pos.unrealisedPnl).toFixed(2)} (${(pos.unrealisedPnlPcnt * 100).toFixed(2)}%)</td>
-                            </tr>
-                        `;
-                        tbody.innerHTML += row;
+                                <td>${p.symbol}</td>
+                                <td><span class="${p.side === 'long' ? 'text-success-custom' : 'text-danger-custom'}">${p.side.toUpperCase()}</span></td>
+                                <td>${p.quantity}</td>
+                                <td>${p.entryPrice.toFixed(4)}</td>
+                                <td>${p.markPrice.toFixed(4)}</td>
+                                <td>${formatCurrency(p.unrealisedPnl)}</td>
+                                <td>${(p.marginCost || 0).toFixed(2)} USDT</td>
+                            </tr>`;
+                        positionsTable.innerHTML += row;
                     });
+                } else {
+                    positionsTable.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Nessuna posizione aperta.</td></tr>';
+                }
+
+                // Populate recent trades
+                const tradesTable = document.getElementById('recent-trades-table');
+                tradesTable.innerHTML = '';
+                 if (data.recent_trades.length > 0) {
+                    data.recent_trades.forEach(t => {
+                        const ts = new Date(t.timestamp * 1000).toLocaleTimeString();
+                        const row = `
+                            <tr>
+                                <td>${ts}</td>
+                                <td>${t.symbol}</td>
+                                <td><span class="${t.side === 'buy' ? 'text-success-custom' : 'text-danger-custom'}">${t.side.toUpperCase()}</span></td>
+                                <td>${t.price}</td>
+                                <td>${t.size}</td>
+                            </tr>`;
+                        tradesTable.innerHTML += row;
+                    });
+                } else {
+                    tradesTable.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Nessun trade recente.</td></tr>';
                 }
             });
 
-        // Logs
         fetch('/api/logs')
-            .then(res => res.json())
+            .then(response => response.json())
             .then(logs => {
-                const logBox = document.getElementById('log-box');
-                logBox.innerHTML = '';
+                const logsContainer = document.getElementById('logs-container');
+                logsContainer.innerHTML = '';
                 logs.forEach(log => {
-                    const date = new Date(log.timestamp * 1000).toLocaleTimeString();
-                    let color = '#a0a0a0';
-                    if(log.level === 'ERROR') color = '#ff4d4d';
-                    if(log.level === 'WARNING') color = '#ffc107';
-
-                    const entry = `<div class="log-entry" style="color: ${color}">
-                        <span class="text-muted">[${date}]</span> <strong>${log.module}:</strong> ${log.message}
-                    </div>`;
-                    logBox.innerHTML += entry;
+                    const ts = new Date(log.timestamp * 1000).toLocaleTimeString();
+                    const levelClass = log.level === 'ERROR' ? 'text-danger-custom' : (log.level === 'WARNING' ? 'text-warning' : '');
+                    const logEntry = `
+                        <div class="log-entry ${levelClass}">
+                            <strong>[${ts}] [${log.module}]</strong> ${log.message}
+                        </div>`;
+                    logsContainer.innerHTML += logEntry;
                 });
             });
     }
